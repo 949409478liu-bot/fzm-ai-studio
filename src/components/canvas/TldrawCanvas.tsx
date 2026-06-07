@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import {
   Tldraw,
   useEditor,
@@ -12,8 +12,13 @@ import "@tldraw/tldraw/tldraw.css";
 import { useStudioStore } from "@/lib/store";
 import type { SelectedShapeInfo } from "@/types";
 import { AiConnectionShapeUtil } from "./AiConnectionShape";
-import { ConnectionPorts } from "./ConnectionPorts";
+import { CanvasInteractionOverlay } from "./CanvasInteractionOverlay";
+import { getImageFromShape } from "@/lib/shape-helpers";
 import { synchronizeAiConnections } from "@/lib/connection-system";
+import {
+  restoreWorkspace,
+  setupWorkspacePersistence,
+} from "@/lib/workspace-persistence";
 
 // ─── Inner component to listen to selection changes ──────────────────
 
@@ -25,12 +30,14 @@ const SelectionListener = track(() => {
     const handleChange = () => {
       const ids = editor.getSelectedShapeIds();
       if (ids.length === 1) {
-        const shape = editor.getShape(ids[0]);
-        if (shape && shape.type === "image") {
+        const selectionId = ids[0];
+        const shape = getImageFromShape(editor, selectionId);
+        if (shape) {
           const assetId = shape.props.assetId;
           const asset = assetId ? editor.getAsset(assetId) : null;
           const info: SelectedShapeInfo = {
             id: shape.id,
+            selectionId,
             type: shape.type,
             name: (asset?.props as Record<string, unknown>)?.name as string || "未命名图片",
             width: Math.round(shape.props.w),
@@ -63,6 +70,19 @@ function ConnectionSynchronizer() {
       if (isSynchronizing) return;
       isSynchronizing = true;
       synchronizeAiConnections(editor);
+      const state = useStudioStore.getState();
+      const results = state.results.filter(
+        (result) =>
+          Boolean(editor.getShape(result.id)) &&
+          Boolean(editor.getShape(result.shapeId))
+      );
+      const actions = state.actions.filter(
+        (action) =>
+          Boolean(editor.getShape(action.sourceId)) &&
+          Boolean(editor.getShape(action.targetId))
+      );
+      if (results.length !== state.results.length) state.setResults(results);
+      if (actions.length !== state.actions.length) state.setActions(actions);
       isSynchronizing = false;
     };
 
@@ -75,10 +95,22 @@ function ConnectionSynchronizer() {
   return null;
 }
 
+function WorkspacePersistence() {
+  const editor = useEditor();
+  const isWorkspaceReady = useStudioStore((state) => state.isWorkspaceReady);
+
+  useEffect(() => {
+    if (!isWorkspaceReady) return;
+    return setupWorkspacePersistence(editor);
+  }, [editor, isWorkspaceReady]);
+  return null;
+}
+
 // ─── Main canvas component ───────────────────────────────────────────
 
 export function TldrawCanvas() {
   const setEditor = useStudioStore((s) => s.setEditor);
+  const restoreStarted = useRef(false);
   const shapeUtils = useMemo(
     () => [...defaultShapeUtils, AiConnectionShapeUtil],
     []
@@ -100,10 +132,21 @@ export function TldrawCanvas() {
         store={store}
         shapeUtils={shapeUtils}
         onMount={(editor) => {
-          setEditor(editor);
+          if (restoreStarted.current) return;
+          restoreStarted.current = true;
+          useStudioStore.getState().setWorkspaceReady(false);
           editor.user.updateUserPreferences({ colorScheme: "dark" });
-          // Reset gallery on fresh mount
-          useStudioStore.setState({ results: [], connections: [] });
+          void restoreWorkspace(editor).then((restored) => {
+            if (!restored) {
+              useStudioStore.setState({
+                results: [],
+                connections: [],
+                actions: [],
+              });
+            }
+            setEditor(editor);
+            useStudioStore.getState().setWorkspaceReady(true);
+          });
         }}
         components={{
           // Hide all default tldraw UI — we use our own shell
@@ -122,11 +165,12 @@ export function TldrawCanvas() {
           SharePanel: null,
           ContextMenu: null,
           KeyboardShortcutsDialog: null,
-          InFrontOfTheCanvas: ConnectionPorts,
+          InFrontOfTheCanvas: CanvasInteractionOverlay,
         }}
       >
         <SelectionListener />
         <ConnectionSynchronizer />
+        <WorkspacePersistence />
       </Tldraw>
     </div>
   );

@@ -18,12 +18,26 @@ export type ResultType =
   | "removeBg"
   | "video";
 
+export type ActionStatus = "queued" | "running" | "completed" | "failed";
+
 export interface GalleryResult {
   id: TLShapeId;
   imageUrl: string;
   type: ResultType;
   typeLabel: string;
   shapeId: TLShapeId;
+}
+
+export interface CanvasAction {
+  id: string;
+  sourceId: TLShapeId;
+  targetId: TLShapeId;
+  actionType: ResultType;
+  actionLabel: string;
+  createdAt: number;
+  status: ActionStatus;
+  provider?: string;
+  error?: string;
 }
 
 export interface CanvasConnection {
@@ -39,6 +53,7 @@ export interface CanvasConnection {
 
 export interface SelectedShapeInfo {
   id: TLShapeId;
+  selectionId: TLShapeId;
   type: string;
   name: string;
   width: number;

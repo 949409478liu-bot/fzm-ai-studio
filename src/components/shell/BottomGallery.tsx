@@ -8,6 +8,7 @@ import type { TLShapeId } from "@tldraw/tldraw";
 export function BottomGallery() {
   const results = useStudioStore((s) => s.results);
   const editor = useStudioStore((s) => s.editor);
+  const actions = useStudioStore((s) => s.actions);
 
   const handleClick = (shapeId: TLShapeId) => {
     if (editor) {
@@ -52,6 +53,13 @@ export function BottomGallery() {
               <span className="text-[9px] text-zinc-400 relative z-10 font-medium">
                 {r.typeLabel}
               </span>
+              {(() => {
+                const action = actions.find((item) => item.targetId === r.id);
+                if (!action || action.status === "completed") return null;
+                return (
+                  <span className="absolute bottom-1 right-1 z-10 h-1.5 w-1.5 animate-pulse rounded-full bg-indigo-400" />
+                );
+              })()}
             </button>
           ) : (
             <div

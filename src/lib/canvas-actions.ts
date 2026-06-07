@@ -7,7 +7,9 @@ import type {
 import { isShapeId } from "@tldraw/tldraw";
 import { useStudioStore, uid, assetUid } from "./store";
 import { createAiConnection } from "./connection-system";
-import type { ResultType } from "@/types";
+import { getImageFromShape, getSelectedImage } from "./shape-helpers";
+import type { CanvasAction, ResultType } from "@/types";
+import { enqueueGenerationTask } from "./api-scheduler";
 
 // ─── SVG utilities ───────────────────────────────────────────────────
 
@@ -49,11 +51,7 @@ function createSvgImageShape(
     type: "image",
     x,
     y,
-    props: {
-      assetId,
-      w,
-      h,
-    },
+    props: { assetId, w, h },
   });
 
   return shapeId;
@@ -85,15 +83,7 @@ function createVideoPlaceholderSvg() {
 </svg>`;
 }
 
-// ─── Internal helpers ────────────────────────────────────────────────
-
-function getSelectedImage(editor: Editor) {
-  const ids = editor.getSelectedShapeIds();
-  if (ids.length !== 1) return null;
-  const shape = editor.getShape(ids[0]);
-  if (!shape || shape.type !== "image") return null;
-  return shape;
-}
+// ─── Layout helper ───────────────────────────────────────────────────
 
 function getResultPosition(
   sourceBounds: { x: number; y: number; w: number; h: number },
@@ -112,6 +102,8 @@ function getResultPosition(
   };
 }
 
+// ─── Result card creator (called by scheduler callback) ──────────────
+
 function createResultCard(
   editor: Editor,
   sourceId: TLShapeId,
@@ -119,31 +111,22 @@ function createResultCard(
   _resultType: ResultType,
   label: string,
   extraScale = 1
-) {
+): TLShapeId | null {
   const sourceBounds = editor.getShapePageBounds(sourceId);
   if (!sourceBounds) return null;
 
   const cardW = sourceBounds.w * extraScale;
   const cardH = sourceBounds.h * extraScale;
-  const { x: cardX, y: cardY } = getResultPosition(
-    sourceBounds,
-    cardW,
-    cardH
-  );
+  const { x: cardX, y: cardY } = getResultPosition(sourceBounds, cardW, cardH);
 
   const sourceAsset = sourceAssetId ? editor.getAsset(sourceAssetId) : null;
   const assetSrc =
     (sourceAsset?.props as Record<string, unknown>)?.src as string || "";
 
-  // Label as SVG image
+  // Label
   const labelId = createSvgImageShape(
-    editor,
-    cardX,
-    cardY - 34,
-    120,
-    28,
-    createLabelSvg(label),
-    `${label}-标签`
+    editor, cardX, cardY - 34, 120, 28,
+    createLabelSvg(label), `${label}-标签`
   );
 
   // Result image — reference the same assetId
@@ -153,21 +136,17 @@ function createResultCard(
     type: "image",
     x: cardX,
     y: cardY,
-    props: {
-      assetId: sourceAssetId,
-      w: cardW,
-      h: cardH,
-    },
+    props: { assetId: sourceAssetId, w: cardW, h: cardH },
   });
 
   editor.groupShapes([labelId, imgId]);
+
+  // Arrow
+  createAiConnection(editor, sourceId, imgId, { type: "auto", label });
+
+  // Gallery result
   const parentId = editor.getShape(imgId)?.parentId;
   const groupId = isShapeId(parentId) ? parentId : imgId;
-
-  createAiConnection(editor, sourceId, imgId, {
-    type: "auto",
-    label,
-  });
 
   useStudioStore.getState().addResult({
     id: imgId,
@@ -176,72 +155,20 @@ function createResultCard(
     typeLabel: label,
     shapeId: groupId,
   });
-  editor.select(sourceId);
+
+  return null;
 }
 
-// ─── Public action functions ────────────────────────────────────────
-
-export function generateSimilar() {
-  const { editor } = useStudioStore.getState();
-  if (!editor) return;
-  const shape = getSelectedImage(editor);
-  if (!shape) return alert("请先在画布中选择一张图片");
-  if (!shape.props.assetId) return;
-  createResultCard(editor, shape.id, shape.props.assetId, "similar", "相似图");
-}
-
-export function generateImg2Img() {
-  const { editor } = useStudioStore.getState();
-  if (!editor) return;
-  const shape = getSelectedImage(editor);
-  if (!shape) return alert("请先在画布中选择一张图片");
-  if (!shape.props.assetId) return;
-  createResultCard(editor, shape.id, shape.props.assetId, "img2img", "图生图");
-}
-
-export function generateUpscale() {
-  const { editor } = useStudioStore.getState();
-  if (!editor) return;
-  const shape = getSelectedImage(editor);
-  if (!shape) return alert("请先在画布中选择一张图片");
-  if (!shape.props.assetId) return;
-  createResultCard(editor, shape.id, shape.props.assetId, "upscale", "高清放大", 1.5);
-}
-
-export function generateClean() {
-  const { editor } = useStudioStore.getState();
-  if (!editor) return;
-  const shape = getSelectedImage(editor);
-  if (!shape) return alert("请先在画布中选择一张图片");
-  if (!shape.props.assetId) return;
-  createResultCard(editor, shape.id, shape.props.assetId, "clean", "已洗图");
-}
-
-export function generateRemoveBg() {
-  const { editor } = useStudioStore.getState();
-  if (!editor) return;
-  const shape = getSelectedImage(editor);
-  if (!shape) return alert("请先在画布中选择一张图片");
-  if (!shape.props.assetId) return;
-  createResultCard(editor, shape.id, shape.props.assetId, "removeBg", "去背景");
-}
-
-export function generateVideo() {
-  const { editor } = useStudioStore.getState();
-  if (!editor) return;
-  const shape = getSelectedImage(editor);
-  if (!shape) return alert("请先在画布中选择一张图片");
-
-  const sourceBounds = editor.getShapePageBounds(shape.id);
-  if (!sourceBounds) return;
+function createVideoResultCard(
+  editor: Editor,
+  sourceId: TLShapeId
+): TLShapeId | null {
+  const sourceBounds = editor.getShapePageBounds(sourceId);
+  if (!sourceBounds) return null;
 
   const cardW = 320;
   const cardH = 200;
-  const { x: cardX, y: cardY } = getResultPosition(
-    sourceBounds,
-    cardW,
-    cardH
-  );
+  const { x: cardX, y: cardY } = getResultPosition(sourceBounds, cardW, cardH);
 
   const labelId = createSvgImageShape(
     editor, cardX, cardY - 34, 120, 28,
@@ -254,13 +181,11 @@ export function generateVideo() {
   );
 
   editor.groupShapes([labelId, videoId]);
+
+  createAiConnection(editor, sourceId, videoId, { type: "auto", label: "视频" });
+
   const parentId = editor.getShape(videoId)?.parentId;
   const groupId = isShapeId(parentId) ? parentId : videoId;
-
-  createAiConnection(editor, shape.id, videoId, {
-    type: "auto",
-    label: "视频",
-  });
 
   useStudioStore.getState().addResult({
     id: videoId,
@@ -269,8 +194,161 @@ export function generateVideo() {
     typeLabel: "视频",
     shapeId: groupId,
   });
-  editor.select(shape.id);
+
+  return videoId;
 }
+
+// ─── Action enqueue helper ───────────────────────────────────────────
+
+function actionUid() {
+  return `action:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function resolveSource(sourceId?: TLShapeId) {
+  const { editor } = useStudioStore.getState();
+  if (!editor) return null;
+  return sourceId
+    ? getImageFromShape(editor, sourceId)
+    : getSelectedImage(editor);
+}
+
+/**
+ * Common flow: create action record → enqueue to scheduler →
+ * scheduler manages status → callback creates result card.
+ */
+function enqueueToolAction(
+  sourceShapeId: TLShapeId,
+  sourceAssetId: TLAssetId,
+  actionType: ResultType,
+  actionLabel: string,
+  extraScale = 1
+) {
+  const { editor } = useStudioStore.getState();
+  if (!editor) return;
+
+  const sourceAsset = editor.getAsset(sourceAssetId);
+  const sourceUrl =
+    (sourceAsset?.props as Record<string, unknown>)?.src as string || "";
+  const sourceShape = editor.getShape(sourceShapeId);
+  const sourceW = (sourceShape?.props as Record<string, number> | undefined)?.w ?? 512;
+  const sourceH = (sourceShape?.props as Record<string, number> | undefined)?.h ?? 512;
+
+  const action: CanvasAction = {
+    id: actionUid(),
+    sourceId: sourceShapeId,
+    targetId: "" as TLShapeId,
+    actionType,
+    actionLabel,
+    createdAt: Date.now(),
+    status: "queued",
+    provider: "mock",
+  };
+  useStudioStore.getState().addAction(action);
+
+  const isVideo = actionType === "video";
+
+  enqueueGenerationTask({
+    provider: "mock",
+    action,
+    sourceShapeId,
+    sourceAssetId,
+    request: {
+      provider: "mock",
+      model: "mock-model",
+      actionType,
+      referenceImage: isVideo
+        ? undefined
+        : {
+            assetId: sourceAssetId,
+            url: sourceUrl,
+            width: sourceW,
+            height: sourceH,
+          },
+      size: { width: sourceW * extraScale, height: sourceH * extraScale },
+      count: 1,
+    },
+    onResult: () => {
+      // Provider returned — create the visual result on canvas
+      if (!editor) return;
+
+      if (isVideo) {
+        createVideoResultCard(editor, sourceShapeId);
+      } else {
+        createResultCard(
+          editor,
+          sourceShapeId,
+          sourceAssetId,
+          actionType,
+          actionLabel,
+          extraScale
+        );
+      }
+
+      editor.select(sourceShapeId);
+    },
+    onError: (error) => {
+      console.warn(`[canvas-actions] ${actionLabel} 失败`, error.message);
+    },
+  });
+}
+
+// ─── Public action functions ─────────────────────────────────────────
+// Each function: validate → enqueueToolAction → scheduler handles rest
+
+export function generateSimilar(sourceId?: TLShapeId) {
+  const { editor } = useStudioStore.getState();
+  if (!editor) return;
+  const shape = resolveSource(sourceId);
+  if (!shape) return alert("请先在画布中选择一张图片");
+  if (!shape.props.assetId) return;
+  enqueueToolAction(shape.id, shape.props.assetId, "similar", "相似图");
+}
+
+export function generateImg2Img(sourceId?: TLShapeId) {
+  const { editor } = useStudioStore.getState();
+  if (!editor) return;
+  const shape = resolveSource(sourceId);
+  if (!shape) return alert("请先在画布中选择一张图片");
+  if (!shape.props.assetId) return;
+  enqueueToolAction(shape.id, shape.props.assetId, "img2img", "图生图");
+}
+
+export function generateUpscale(sourceId?: TLShapeId) {
+  const { editor } = useStudioStore.getState();
+  if (!editor) return;
+  const shape = resolveSource(sourceId);
+  if (!shape) return alert("请先在画布中选择一张图片");
+  if (!shape.props.assetId) return;
+  enqueueToolAction(shape.id, shape.props.assetId, "upscale", "高清放大", 1.5);
+}
+
+export function generateClean(sourceId?: TLShapeId) {
+  const { editor } = useStudioStore.getState();
+  if (!editor) return;
+  const shape = resolveSource(sourceId);
+  if (!shape) return alert("请先在画布中选择一张图片");
+  if (!shape.props.assetId) return;
+  enqueueToolAction(shape.id, shape.props.assetId, "clean", "已洗图");
+}
+
+export function generateRemoveBg(sourceId?: TLShapeId) {
+  const { editor } = useStudioStore.getState();
+  if (!editor) return;
+  const shape = resolveSource(sourceId);
+  if (!shape) return alert("请先在画布中选择一张图片");
+  if (!shape.props.assetId) return;
+  enqueueToolAction(shape.id, shape.props.assetId, "removeBg", "去背景");
+}
+
+export function generateVideo(sourceId?: TLShapeId) {
+  const { editor } = useStudioStore.getState();
+  if (!editor) return;
+  const shape = resolveSource(sourceId);
+  if (!shape) return alert("请先在画布中选择一张图片");
+  enqueueToolAction(shape.id, shape.props.assetId || ("" as TLAssetId), "video", "视频");
+}
+
+// ─── Run demo — stays direct, no scheduler needed ────────────────────
 
 export function runDemo(editor: Editor) {
   const shapes = editor.getCurrentPageShapes();
@@ -284,7 +362,7 @@ export function runDemo(editor: Editor) {
   const cardW = 260;
   const cardH = 200;
 
-  // ── Source card ──
+  // Source card
   const label1Id = createSvgImageShape(
     editor, cx, cy - 34, 120, 28,
     createLabelSvg("原图"), "原图-标签"
@@ -295,7 +373,7 @@ export function runDemo(editor: Editor) {
   );
   editor.groupShapes([label1Id, sourceId]);
 
-  // ── Similar card ──
+  // Similar card
   const simX = cx + cardW + 260;
   const label2Id = createSvgImageShape(
     editor, simX, cy - 34, 120, 28,
@@ -307,12 +385,9 @@ export function runDemo(editor: Editor) {
   );
   editor.groupShapes([label2Id, simId]);
 
-  createAiConnection(editor, sourceId, simId, {
-    type: "auto",
-    label: "相似图",
-  });
+  createAiConnection(editor, sourceId, simId, { type: "auto", label: "相似图" });
 
-  // ── Video card ──
+  // Video card
   const vidX = simX;
   const vidY = cy + cardH + 80;
   const vidW = 320;
@@ -327,18 +402,36 @@ export function runDemo(editor: Editor) {
   );
   editor.groupShapes([label3Id, vidId]);
 
-  createAiConnection(editor, sourceId, vidId, {
-    type: "auto",
-    label: "视频",
-  });
-  createAiConnection(editor, simId, vidId, {
-    type: "auto",
-    label: "相似图转视频",
-  });
+  createAiConnection(editor, sourceId, vidId, { type: "auto", label: "视频" });
+  createAiConnection(editor, simId, vidId, { type: "auto", label: "相似图转视频" });
 
   const store = useStudioStore.getState();
   store.addResult({ id: simId, imageUrl: "", type: "similar", typeLabel: "相似图", shapeId: simId });
   store.addResult({ id: vidId, imageUrl: "", type: "video", typeLabel: "视频", shapeId: vidId });
+
+  // Demo actions — use the scheduler for status simulation
+  const simAction: CanvasAction = {
+    id: actionUid(),
+    sourceId,
+    targetId: simId,
+    actionType: "similar",
+    actionLabel: "相似图",
+    createdAt: Date.now(),
+    status: "completed",
+    provider: "mock",
+  };
+  const vidAction: CanvasAction = {
+    id: actionUid(),
+    sourceId,
+    targetId: vidId,
+    actionType: "video",
+    actionLabel: "视频",
+    createdAt: Date.now(),
+    status: "completed",
+    provider: "mock",
+  };
+  store.addAction(simAction);
+  store.addAction(vidAction);
 
   editor.zoomToFit({ animation: { duration: 400 } });
 }

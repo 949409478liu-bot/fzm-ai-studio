@@ -35,7 +35,18 @@ const sizes = ["1024", "1536", "2048", "4K"];
 export function RightInspector() {
   const selected = useStudioStore((s) => s.selectedShape);
   const editor = useStudioStore((s) => s.editor);
+  const actions = useStudioStore((s) => s.actions);
   const [inpaintActive, setInpaintActive] = useState(false);
+  const sourceAction = selected
+    ? actions.find((action) => action.targetId === selected.id)
+    : null;
+  const sourceShape = sourceAction && editor
+    ? editor.getShape(sourceAction.sourceId)
+    : null;
+  const sourceAsset =
+    sourceShape?.type === "image" && sourceShape.props.assetId && editor
+      ? editor.getAsset(sourceShape.props.assetId)
+      : null;
 
   if (!selected) {
     return (
@@ -81,6 +92,50 @@ export function RightInspector() {
           {selected.width} × {selected.height} px
         </p>
       </div>
+
+      {sourceAction && (
+        <>
+          <div className="border-t border-white/[0.04]" />
+          <div className="space-y-2 p-3">
+            <p className="text-[10px] font-medium uppercase tracking-widest text-zinc-600">
+              来源追踪
+            </p>
+            <div className="space-y-1.5 text-[11px]">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-zinc-600">来源图片</span>
+                <span className="truncate text-zinc-400">
+                  {((sourceAsset?.props as Record<string, unknown>)?.name as string) || "上一步结果"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-600">当前动作</span>
+                <span className="text-indigo-300/80">{sourceAction.actionLabel}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-600">状态</span>
+                <span className="text-zinc-400">
+                  {sourceAction.status === "queued"
+                    ? "排队中"
+                    : sourceAction.status === "running"
+                      ? "生成中"
+                      : sourceAction.status === "failed"
+                        ? "失败"
+                        : "已完成"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-600">创建时间</span>
+                <span className="text-zinc-500">
+                  {new Date(sourceAction.createdAt).toLocaleTimeString("zh-CN", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Group 1 — 生成 */}
       <div className="border-t border-white/[0.04]" />
@@ -158,7 +213,7 @@ export function RightInspector() {
           className="s-btn s-btn-ghost w-full justify-center text-[11px] text-zinc-500 hover:text-red-400 gap-1.5"
           onClick={() => {
             if (editor) {
-              editor.deleteShape(selected.id);
+              editor.deleteShape(selected.selectionId);
             }
           }}
         >
