@@ -11,6 +11,9 @@ import {
 import "@tldraw/tldraw/tldraw.css";
 import { useStudioStore } from "@/lib/store";
 import type { SelectedShapeInfo } from "@/types";
+import { AiConnectionShapeUtil } from "./AiConnectionShape";
+import { ConnectionPorts } from "./ConnectionPorts";
+import { synchronizeAiConnections } from "@/lib/connection-system";
 
 // ─── Inner component to listen to selection changes ──────────────────
 
@@ -51,27 +54,56 @@ const SelectionListener = track(() => {
   return null;
 });
 
+function ConnectionSynchronizer() {
+  const editor = useEditor();
+
+  useEffect(() => {
+    let isSynchronizing = false;
+    const handleChange = () => {
+      if (isSynchronizing) return;
+      isSynchronizing = true;
+      synchronizeAiConnections(editor);
+      isSynchronizing = false;
+    };
+
+    editor.on("change", handleChange);
+    return () => {
+      editor.off("change", handleChange);
+    };
+  }, [editor]);
+
+  return null;
+}
+
 // ─── Main canvas component ───────────────────────────────────────────
 
 export function TldrawCanvas() {
   const setEditor = useStudioStore((s) => s.setEditor);
+  const shapeUtils = useMemo(
+    () => [...defaultShapeUtils, AiConnectionShapeUtil],
+    []
+  );
 
   // Create a fresh store each mount — no IndexedDB persistence,
   // so stale shape IDs from previous sessions won't cause errors.
   const store = useMemo(
-    () => createTLStore({ shapeUtils: defaultShapeUtils }),
-    []
+    () =>
+      createTLStore({
+        shapeUtils,
+      }),
+    [shapeUtils]
   );
 
   return (
     <div className="flex-1 relative tldraw-dark-override">
       <Tldraw
         store={store}
+        shapeUtils={shapeUtils}
         onMount={(editor) => {
           setEditor(editor);
           editor.user.updateUserPreferences({ colorScheme: "dark" });
           // Reset gallery on fresh mount
-          useStudioStore.setState({ results: [] });
+          useStudioStore.setState({ results: [], connections: [] });
         }}
         components={{
           // Hide all default tldraw UI — we use our own shell
@@ -90,9 +122,11 @@ export function TldrawCanvas() {
           SharePanel: null,
           ContextMenu: null,
           KeyboardShortcutsDialog: null,
+          InFrontOfTheCanvas: ConnectionPorts,
         }}
       >
         <SelectionListener />
+        <ConnectionSynchronizer />
       </Tldraw>
     </div>
   );

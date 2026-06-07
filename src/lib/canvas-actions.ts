@@ -6,6 +6,7 @@ import type {
 } from "@tldraw/tldraw";
 import { isShapeId } from "@tldraw/tldraw";
 import { useStudioStore, uid, assetUid } from "./store";
+import { createAiConnection } from "./connection-system";
 import type { ResultType } from "@/types";
 
 // ─── SVG utilities ───────────────────────────────────────────────────
@@ -163,19 +164,7 @@ function createResultCard(
   const parentId = editor.getShape(imgId)?.parentId;
   const groupId = isShapeId(parentId) ? parentId : imgId;
 
-  // Arrow
-  const arrowId = uid();
-  editor.createShape({
-    id: arrowId,
-    type: "arrow",
-    x: 0,
-    y: 0,
-    props: {
-      color: "violet",
-      start: { x: sourceBounds.x + sourceBounds.w, y: sourceBounds.y + sourceBounds.h / 2 },
-      end: { x: cardX, y: cardY + cardH / 2 },
-    },
-  });
+  createAiConnection(editor, sourceId, imgId, _resultType, label);
 
   useStudioStore.getState().addResult({
     id: imgId,
@@ -265,18 +254,7 @@ export function generateVideo() {
   const parentId = editor.getShape(videoId)?.parentId;
   const groupId = isShapeId(parentId) ? parentId : videoId;
 
-  const arrowId = uid();
-  editor.createShape({
-    id: arrowId,
-    type: "arrow",
-    x: 0,
-    y: 0,
-    props: {
-      color: "violet",
-      start: { x: sourceBounds.x + sourceBounds.w, y: sourceBounds.y + sourceBounds.h / 2 },
-      end: { x: cardX, y: cardY + cardH / 2 },
-    },
-  });
+  createAiConnection(editor, shape.id, videoId, "video", "视频");
 
   useStudioStore.getState().addResult({
     id: videoId,
@@ -323,18 +301,7 @@ export function runDemo(editor: Editor) {
   );
   editor.groupShapes([label2Id, simId]);
 
-  // ── Arrow: source → similar ──
-  editor.createShape({
-    id: uid(),
-    type: "arrow",
-    x: 0,
-    y: 0,
-    props: {
-      color: "violet",
-      start: { x: cx + cardW, y: cy + cardH / 2 },
-      end: { x: simX, y: cy + cardH / 2 },
-    },
-  });
+  createAiConnection(editor, sourceId, simId, "similar", "相似图");
 
   // ── Video card ──
   const vidX = simX;
@@ -351,31 +318,8 @@ export function runDemo(editor: Editor) {
   );
   editor.groupShapes([label3Id, vidId]);
 
-  // ── Arrow: source → video ──
-  editor.createShape({
-    id: uid(),
-    type: "arrow",
-    x: 0,
-    y: 0,
-    props: {
-      color: "violet",
-      start: { x: cx + cardW, y: cy + cardH / 2 },
-      end: { x: vidX, y: vidY + vidH / 2 },
-    },
-  });
-
-  // ── Arrow: similar → video ──
-  editor.createShape({
-    id: uid(),
-    type: "arrow",
-    x: 0,
-    y: 0,
-    props: {
-      color: "violet",
-      start: { x: simX + cardW, y: cy + cardH / 2 },
-      end: { x: vidX, y: vidY + vidH / 2 },
-    },
-  });
+  createAiConnection(editor, sourceId, vidId, "video", "视频");
+  createAiConnection(editor, simId, vidId, "video", "相似图转视频");
 
   const store = useStudioStore.getState();
   store.addResult({ id: simId, imageUrl: "", type: "similar", typeLabel: "相似图", shapeId: simId });

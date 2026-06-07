@@ -1,5 +1,11 @@
 import { create } from "zustand";
-import type { ToolType, ApiSettings, GalleryResult, SelectedShapeInfo } from "@/types";
+import type {
+  ToolType,
+  ApiSettings,
+  GalleryResult,
+  SelectedShapeInfo,
+  CanvasConnection,
+} from "@/types";
 import type { Editor, TLAssetId, TLShapeId } from "@tldraw/tldraw";
 
 interface StudioState {
@@ -18,6 +24,10 @@ interface StudioState {
   // Bottom gallery results
   results: GalleryResult[];
   addResult: (r: GalleryResult) => void;
+
+  connections: CanvasConnection[];
+  addConnection: (connection: CanvasConnection) => void;
+  removeConnection: (id: TLShapeId) => void;
 
   // API settings
   isApiSettingsOpen: boolean;
@@ -42,6 +52,14 @@ export const useStudioStore = create<StudioState>((set) => ({
 
   results: [],
   addResult: (r) => set((s) => ({ results: [r, ...s.results] })),
+
+  connections: [],
+  addConnection: (connection) =>
+    set((s) => ({ connections: [...s.connections, connection] })),
+  removeConnection: (id) =>
+    set((s) => ({
+      connections: s.connections.filter((connection) => connection.id !== id),
+    })),
 
   isApiSettingsOpen: false,
   setApiSettingsOpen: (open) => set({ isApiSettingsOpen: open }),

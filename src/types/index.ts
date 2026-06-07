@@ -25,6 +25,14 @@ export interface GalleryResult {
   shapeId: TLShapeId;
 }
 
+export interface CanvasConnection {
+  id: TLShapeId;
+  sourceId: TLShapeId;
+  targetId: TLShapeId;
+  type: ResultType;
+  label: string;
+}
+
 export interface SelectedShapeInfo {
   id: TLShapeId;
   type: string;

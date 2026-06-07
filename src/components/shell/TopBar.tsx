@@ -69,7 +69,7 @@ export function TopBar() {
           onClick={() => {
             if (editor) {
               editor.deleteShapes(editor.getCurrentPageShapes().map(s => s.id));
-              useStudioStore.setState({ results: [] });
+              useStudioStore.setState({ results: [], connections: [] });
             }
           }}
         >
