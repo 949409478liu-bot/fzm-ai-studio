@@ -1,0 +1,349 @@
+import type { Editor } from "@tldraw/tldraw";
+import { useStudioStore, uid, assetUid } from "./store";
+import type { GalleryResult, ResultType } from "@/types";
+
+// ─── SVG utilities ───────────────────────────────────────────────────
+
+function svgToDataUrl(svg: string) {
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+function createSvgImageShape(
+  editor: Editor,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  svg: string,
+  name: string
+): string {
+  const assetId = assetUid();
+  const shapeId = uid();
+
+  editor.createAssets([
+    {
+      id: assetId,
+      typeName: "asset",
+      type: "image",
+      props: {
+        name,
+        src: svgToDataUrl(svg),
+        w,
+        h,
+        mimeType: "image/svg+xml",
+        isAnimated: false,
+      },
+      meta: {},
+    } as any,
+  ]);
+
+  editor.createShape({
+    id: shapeId,
+    type: "image",
+    x,
+    y,
+    props: {
+      assetId,
+      w,
+      h,
+    } as any,
+  });
+
+  return shapeId;
+}
+
+// ─── SVG generators ──────────────────────────────────────────────────
+
+function createLabelSvg(label: string) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="28" viewBox="0 0 120 28">
+  <rect x="0.5" y="0.5" width="119" height="27" rx="10" fill="rgba(15,15,25,0.92)" stroke="rgba(139,92,246,0.55)"/>
+  <text x="60" y="18" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" font-weight="600" fill="#d4d4d8">${label}</text>
+</svg>`;
+}
+
+function createCardSvg(label: string, w: number, h: number) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+  <rect x="1" y="1" width="${w - 2}" height="${h - 2}" rx="14" fill="#151520" stroke="rgba(139,92,246,0.35)" stroke-width="2"/>
+  <text x="${w / 2}" y="${h / 2 + 6}" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="600" fill="#a5b4fc">${label}</text>
+</svg>`;
+}
+
+function createVideoPlaceholderSvg() {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200" viewBox="0 0 320 200">
+  <rect x="1" y="1" width="318" height="198" rx="18" fill="#11111a" stroke="rgba(139,92,246,0.45)" stroke-width="2"/>
+  <circle cx="160" cy="92" r="28" fill="rgba(139,92,246,0.18)" stroke="rgba(139,92,246,0.55)"/>
+  <path d="M153 78 L153 106 L176 92 Z" fill="#a78bfa"/>
+  <text x="160" y="145" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="600" fill="#d4d4d8">视频占位</text>
+  <text x="160" y="168" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#71717a">Image to Video Mock</text>
+</svg>`;
+}
+
+// ─── Internal helpers ────────────────────────────────────────────────
+
+function getSelectedImage(editor: Editor) {
+  const ids = editor.getSelectedShapeIds();
+  if (ids.length !== 1) return null;
+  const shape = editor.getShape(ids[0]);
+  if (!shape || shape.type !== "image") return null;
+  return shape;
+}
+
+function createResultCard(
+  editor: Editor,
+  sourceId: string,
+  sourceAssetId: string,
+  _resultType: ResultType,
+  label: string,
+  extraScale = 1
+) {
+  const sourceBounds = editor.getShapePageBounds(sourceId);
+  if (!sourceBounds) return null;
+
+  const gap = 260;
+  const cardX = sourceBounds.x + sourceBounds.w + gap;
+  const cardY = sourceBounds.y;
+  const cardW = sourceBounds.w * extraScale;
+  const cardH = sourceBounds.h * extraScale;
+
+  const sourceAsset = sourceAssetId ? editor.getAsset(sourceAssetId) : null;
+  const assetSrc =
+    (sourceAsset?.props as Record<string, unknown>)?.src as string || "";
+
+  // Label as SVG image
+  const labelId = createSvgImageShape(
+    editor,
+    cardX,
+    cardY - 34,
+    120,
+    28,
+    createLabelSvg(label),
+    `${label}-标签`
+  );
+
+  // Result image — reference the same assetId
+  const imgId = uid();
+  editor.createShape({
+    id: imgId,
+    type: "image",
+    x: cardX,
+    y: cardY,
+    props: {
+      assetId: sourceAssetId,
+      w: cardW,
+      h: cardH,
+    } as any,
+  });
+
+  editor.groupShapes([labelId, imgId]);
+  const groupId = editor.getShape(imgId)?.parentId || imgId;
+
+  // Arrow
+  const arrowId = uid();
+  editor.createShape({
+    id: arrowId,
+    type: "arrow",
+    x: 0,
+    y: 0,
+    props: {
+      color: "violet",
+      start: { type: "point", x: sourceBounds.x + sourceBounds.w, y: sourceBounds.y + sourceBounds.h / 2 },
+      end: { type: "point", x: cardX, y: cardY + cardH / 2 },
+    },
+  });
+
+  useStudioStore.getState().addResult({
+    id: imgId,
+    imageUrl: assetSrc,
+    type: _resultType,
+    typeLabel: label,
+    shapeId: groupId,
+  });
+}
+
+// ─── Public action functions ────────────────────────────────────────
+
+export function generateSimilar() {
+  const { editor } = useStudioStore.getState();
+  if (!editor) return;
+  const shape = getSelectedImage(editor);
+  if (!shape) return alert("请先在画布中选择一张图片");
+  createResultCard(editor, shape.id, shape.props.assetId as string, "similar", "相似图");
+}
+
+export function generateImg2Img() {
+  const { editor } = useStudioStore.getState();
+  if (!editor) return;
+  const shape = getSelectedImage(editor);
+  if (!shape) return alert("请先在画布中选择一张图片");
+  createResultCard(editor, shape.id, shape.props.assetId as string, "img2img", "图生图");
+}
+
+export function generateUpscale() {
+  const { editor } = useStudioStore.getState();
+  if (!editor) return;
+  const shape = getSelectedImage(editor);
+  if (!shape) return alert("请先在画布中选择一张图片");
+  createResultCard(editor, shape.id, shape.props.assetId as string, "upscale", "高清放大", 1.5);
+}
+
+export function generateClean() {
+  const { editor } = useStudioStore.getState();
+  if (!editor) return;
+  const shape = getSelectedImage(editor);
+  if (!shape) return alert("请先在画布中选择一张图片");
+  createResultCard(editor, shape.id, shape.props.assetId as string, "clean", "已洗图");
+}
+
+export function generateRemoveBg() {
+  const { editor } = useStudioStore.getState();
+  if (!editor) return;
+  const shape = getSelectedImage(editor);
+  if (!shape) return alert("请先在画布中选择一张图片");
+  createResultCard(editor, shape.id, shape.props.assetId as string, "removeBg", "去背景");
+}
+
+export function generateVideo() {
+  const { editor } = useStudioStore.getState();
+  if (!editor) return;
+  const shape = getSelectedImage(editor);
+  if (!shape) return alert("请先在画布中选择一张图片");
+
+  const sourceBounds = editor.getShapePageBounds(shape.id);
+  if (!sourceBounds) return;
+
+  const gap = 260;
+  const cardW = 320;
+  const cardH = 200;
+  const cardX = sourceBounds.x + sourceBounds.w + gap;
+  const cardY = sourceBounds.y;
+
+  const labelId = createSvgImageShape(
+    editor, cardX, cardY - 34, 120, 28,
+    createLabelSvg("视频"), "视频-标签"
+  );
+
+  const videoId = createSvgImageShape(
+    editor, cardX, cardY, cardW, cardH,
+    createVideoPlaceholderSvg(), "视频-占位"
+  );
+
+  editor.groupShapes([labelId, videoId]);
+  const groupId = editor.getShape(videoId)?.parentId || videoId;
+
+  const arrowId = uid();
+  editor.createShape({
+    id: arrowId,
+    type: "arrow",
+    x: 0,
+    y: 0,
+    props: {
+      color: "violet",
+      start: { type: "point", x: sourceBounds.x + sourceBounds.w, y: sourceBounds.y + sourceBounds.h / 2 },
+      end: { type: "point", x: cardX, y: cardY + cardH / 2 },
+    },
+  });
+
+  useStudioStore.getState().addResult({
+    id: videoId,
+    imageUrl: "",
+    type: "video",
+    typeLabel: "视频",
+    shapeId: groupId,
+  });
+}
+
+export function runDemo(editor: Editor) {
+  const shapes = editor.getCurrentPageShapes();
+  if (shapes.length > 0) {
+    alert("演示已生成。如需重新生成，请先清空画布。");
+    return;
+  }
+
+  const cx = 200;
+  const cy = 160;
+  const cardW = 260;
+  const cardH = 200;
+
+  // ── Source card ──
+  const label1Id = createSvgImageShape(
+    editor, cx, cy - 34, 120, 28,
+    createLabelSvg("原图"), "原图-标签"
+  );
+  const sourceId = createSvgImageShape(
+    editor, cx, cy, cardW, cardH,
+    createCardSvg("原图", cardW, cardH), "原图-卡片"
+  );
+  editor.groupShapes([label1Id, sourceId]);
+
+  // ── Similar card ──
+  const simX = cx + cardW + 260;
+  const label2Id = createSvgImageShape(
+    editor, simX, cy - 34, 120, 28,
+    createLabelSvg("相似图"), "相似图-标签"
+  );
+  const simId = createSvgImageShape(
+    editor, simX, cy, cardW, cardH,
+    createCardSvg("相似图", cardW, cardH), "相似图-卡片"
+  );
+  editor.groupShapes([label2Id, simId]);
+
+  // ── Arrow: source → similar ──
+  editor.createShape({
+    id: uid(),
+    type: "arrow",
+    x: 0,
+    y: 0,
+    props: {
+      color: "violet",
+      start: { type: "point", x: cx + cardW, y: cy + cardH / 2 },
+      end: { type: "point", x: simX, y: cy + cardH / 2 },
+    },
+  });
+
+  // ── Video card ──
+  const vidX = simX;
+  const vidY = cy + cardH + 80;
+  const vidW = 320;
+  const vidH = 200;
+  const label3Id = createSvgImageShape(
+    editor, vidX, vidY - 34, 120, 28,
+    createLabelSvg("视频"), "视频-标签"
+  );
+  const vidId = createSvgImageShape(
+    editor, vidX, vidY, vidW, vidH,
+    createVideoPlaceholderSvg(), "视频-卡片"
+  );
+  editor.groupShapes([label3Id, vidId]);
+
+  // ── Arrow: source → video ──
+  editor.createShape({
+    id: uid(),
+    type: "arrow",
+    x: 0,
+    y: 0,
+    props: {
+      color: "violet",
+      start: { type: "point", x: cx + cardW, y: cy + cardH / 2 },
+      end: { type: "point", x: vidX, y: vidY + vidH / 2 },
+    },
+  });
+
+  // ── Arrow: similar → video ──
+  editor.createShape({
+    id: uid(),
+    type: "arrow",
+    x: 0,
+    y: 0,
+    props: {
+      color: "violet",
+      start: { type: "point", x: simX + cardW, y: cy + cardH / 2 },
+      end: { type: "point", x: vidX, y: vidY + vidH / 2 },
+    },
+  });
+
+  const store = useStudioStore.getState();
+  store.addResult({ id: simId, imageUrl: "", type: "similar", typeLabel: "相似图", shapeId: simId });
+  store.addResult({ id: vidId, imageUrl: "", type: "video", typeLabel: "视频", shapeId: vidId });
+
+  editor.zoomToFit({ animation: { duration: 400 } });
+}

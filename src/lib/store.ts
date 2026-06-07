@@ -1,0 +1,58 @@
+import { create } from "zustand";
+import type { ToolType, ApiSettings, GalleryResult, SelectedShapeInfo } from "@/types";
+import type { Editor } from "@tldraw/tldraw";
+
+interface StudioState {
+  // Editor reference
+  editor: Editor | null;
+  setEditor: (editor: Editor | null) => void;
+
+  // Selected shape info (for right panel)
+  selectedShape: SelectedShapeInfo | null;
+  setSelectedShape: (info: SelectedShapeInfo | null) => void;
+
+  // Active tool
+  activeTool: ToolType;
+  setActiveTool: (tool: ToolType) => void;
+
+  // Bottom gallery results
+  results: GalleryResult[];
+  addResult: (r: GalleryResult) => void;
+
+  // API settings
+  isApiSettingsOpen: boolean;
+  setApiSettingsOpen: (open: boolean) => void;
+  apiSettings: ApiSettings;
+  setApiSettings: (s: Partial<ApiSettings>) => void;
+}
+
+let nextId = 0;
+export const uid = () => `shape:fzm-${Date.now()}-${++nextId}`;
+export const assetUid = () => `asset:fzm-${Date.now()}-${++nextId}`;
+
+export const useStudioStore = create<StudioState>((set) => ({
+  editor: null,
+  setEditor: (editor) => set({ editor }),
+
+  selectedShape: null,
+  setSelectedShape: (info) => set({ selectedShape: info }),
+
+  activeTool: "select",
+  setActiveTool: (tool) => set({ activeTool: tool }),
+
+  results: [],
+  addResult: (r) => set((s) => ({ results: [r, ...s.results] })),
+
+  isApiSettingsOpen: false,
+  setApiSettingsOpen: (open) => set({ isApiSettingsOpen: open }),
+
+  apiSettings: {
+    geminiKey: "",
+    openaiKey: "",
+    falKey: "",
+    comfyuiUrl: "",
+    klingKey: "",
+  },
+  setApiSettings: (partial) =>
+    set((s) => ({ apiSettings: { ...s.apiSettings, ...partial } })),
+}));
