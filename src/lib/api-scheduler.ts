@@ -3,7 +3,7 @@ import { getProvider } from "./providers/dispatcher";
 import type { ProviderName } from "./providers/types";
 import type { ImageGenerationRequest, ImageGenerationResponse } from "./providers/types";
 import type { TLAssetId, TLShapeId } from "@tldraw/tldraw";
-import type { CanvasAction } from "@/types";
+import type { CanvasAction, ResultType } from "@/types";
 
 // ─── Types ────────────────────────────────────────────────────────────
 
@@ -89,8 +89,57 @@ async function executeTask(item: QueueItem): Promise<void> {
       // Local mock adapter
       const provider = getProvider(task.provider);
       result = await provider.generateImage(task.request);
+    } else if (isEditAction(task.request.actionType)) {
+      // Pre-flight: must have sourceAssetId
+      if (!task.sourceAssetId) {
+        throw new Error("参考图读取失败，请重新选择图片");
+      }
+
+      // Log edit action details
+      console.log("[api-scheduler] 图片编辑任务", JSON.stringify({
+        actionType: task.request.actionType,
+        sourceShapeId: task.sourceShapeId,
+        sourceAssetId: task.sourceAssetId,
+        providerId: task.providerId,
+        model: task.request.model,
+        endpoint: "/images/edits",
+      }));
+
+      // Image editing: get source blob, send as multipart to /api/providers/edit
+      const imageBlob = await getImageBlobFromAsset(task.sourceAssetId);
+      if (!imageBlob) {
+        throw new Error("参考图读取失败，请重新选择图片");
+      }
+
+      const editFormData = new FormData();
+      editFormData.append("providerId", task.providerId!);
+      editFormData.append("model", task.request.model || "gpt-image-2");
+      editFormData.append("prompt", task.request.prompt || "");
+      editFormData.append("size", `${task.request.size.width}x${task.request.size.height}`);
+      editFormData.append("quality", "auto");
+      editFormData.append("count", String(task.request.count));
+      editFormData.append("image", imageBlob, "source.png");
+
+      const res = await fetch("/api/providers/edit", {
+        method: "POST",
+        body: editFormData,
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `服务器返回 ${res.status}`);
+      }
+
+      result = await res.json();
+
+      // Convert b64Json → data: URL
+      for (const asset of result.assets) {
+        if (asset.b64Json && !asset.url) {
+          asset.url = `data:${asset.mimeType || "image/png"};base64,${asset.b64Json}`;
+        }
+      }
     } else {
-      // Real provider: call server-side API route
+      // Real provider: call server-side API route (generation)
       const res = await fetch("/api/providers/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -131,6 +180,37 @@ async function executeTask(item: QueueItem): Promise<void> {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────
+
+/** Detect whether this action type should use /images/edits (multipart) */
+function isEditAction(actionType: ResultType | string): boolean {
+  return (
+    actionType === "img2img" ||
+    actionType === "clean" ||
+    actionType === "removeBg" ||
+    actionType === "inpaint"
+  );
+}
+
+/** Extract image Blob from a tldraw asset by assetId */
+async function getImageBlobFromAsset(assetId: TLAssetId): Promise<File | null> {
+  const { editor } = useStudioStore.getState();
+  if (!editor) return null;
+
+  const asset = editor.getAsset(assetId);
+  if (!asset || asset.type !== "image") return null;
+
+  const src = (asset.props as Record<string, unknown>)?.src as string | undefined;
+  if (!src) return null;
+
+  try {
+    const res = await fetch(src);
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return new File([blob], "source.png", { type: blob.type || "image/png" });
+  } catch {
+    return null;
+  }
+}
 
 export function getQueueLength(): number {
   return queue.length;

@@ -46,8 +46,7 @@ function getCurvePoints({
   endY: number;
 }) {
   const dx = Math.abs(endX - startX);
-  // Flatter curve: less dramatic bezier, more direct connection
-  const cpOffset = Math.min(dx * 0.3, 120);
+  const cpOffset = Math.min(dx * 0.38, 130);
 
   return {
     start: { x: startX, y: startY },
@@ -63,6 +62,26 @@ export function getAiConnectionPath(
   const { start, cp1, cp2, end } = getCurvePoints(points);
   return `M ${start.x} ${start.y} C ${cp1.x} ${cp1.y}, ${cp2.x} ${cp2.y}, ${end.x} ${end.y}`;
 }
+
+// ─── Visual presets ──────────────────────────────────────────────────
+
+const STYLES = {
+  default: {
+    glow: { color: "rgba(80,160,255,0.22)", width: 2.8 },
+    main: { color: "rgba(235,245,255,0.92)", width: 1.8 },
+    dot: { r: 3.5, fill: "rgba(180,210,255,0.55)" },
+  },
+  hover: {
+    glow: { color: "rgba(90,170,255,0.38)", width: 3.0 },
+    main: { color: "rgba(255,255,255,0.98)", width: 2.2 },
+    dot: { r: 4.5, fill: "rgba(200,225,255,0.8)" },
+  },
+  selected: {
+    glow: { color: "rgba(80,140,255,0.48)", width: 3.2 },
+    main: { color: "rgba(255,255,255,1)", width: 2.4 },
+    dot: { r: 5, fill: "rgba(255,255,255,0.9)" },
+  },
+} as const;
 
 export class AiConnectionShapeUtil extends ShapeUtil<AiConnectionShape> {
   static override type = AI_CONNECTION_TYPE;
@@ -107,52 +126,76 @@ export class AiConnectionShapeUtil extends ShapeUtil<AiConnectionShape> {
   }
 
   override component(shape: AiConnectionShape) {
-    const isActive =
-      this.editor.getHoveredShapeId() === shape.id ||
-      this.editor.getSelectedShapeIds().includes(shape.id);
+    const hovered = this.editor.getHoveredShapeId() === shape.id;
+    const selected = this.editor.getSelectedShapeIds().includes(shape.id);
+    const s = selected ? STYLES.selected : hovered ? STYLES.hover : STYLES.default;
 
     const path = getAiConnectionPath(shape.props);
 
-    // Subtle, professional line styling
-    const strokeColor = isActive
-      ? "rgba(165,180,252,0.65)"
-      : "rgba(150,160,180,0.28)";
-    const strokeW = isActive ? 1.5 : 1;
-
     return (
       <SVGContainer style={{ overflow: "visible" }}>
-        {/* Invisible wider hit area */}
+        {/* Hit area */}
         <path
           d={path}
           fill="none"
           stroke="transparent"
-          strokeWidth={12}
+          strokeWidth={16}
           pointerEvents="stroke"
         />
-        {/* Visible subtle line */}
+        {/* Glow layer */}
         <path
           d={path}
           fill="none"
-          stroke={strokeColor}
-          strokeWidth={strokeW}
+          stroke={s.glow.color}
+          strokeWidth={s.glow.width}
           strokeLinecap="round"
+          strokeLinejoin="round"
           vectorEffect="non-scaling-stroke"
           pointerEvents="none"
-          style={{
-            transition: "stroke 180ms ease, stroke-width 180ms ease",
-          }}
+          style={{ transition: "stroke 180ms ease, stroke-width 180ms ease" }}
         />
-        {/* Small arrow at end */}
-        {isActive && (
-          <circle
-            cx={shape.props.endX}
-            cy={shape.props.endY}
-            r={3}
-            fill="rgba(165,180,252,0.5)"
+        {/* Main bright line */}
+        <path
+          d={path}
+          fill="none"
+          stroke={s.main.color}
+          strokeWidth={s.main.width}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
+          pointerEvents="none"
+          style={{ transition: "stroke 180ms ease, stroke-width 180ms ease" }}
+        />
+        {/* Flow animation layer — visible on hover/select, suggests direction */}
+        {(hovered || selected) && (
+          <path
+            d={path}
+            fill="none"
+            stroke="rgba(255,255,255,0.45)"
+            strokeWidth={1.8}
+            strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
             pointerEvents="none"
-            style={{ transition: "opacity 180ms ease" }}
+            className="connection-flow-animate"
           />
         )}
+        {/* Endpoint dots */}
+        <circle
+          cx={shape.props.startX}
+          cy={shape.props.startY}
+          r={s.dot.r}
+          fill={s.dot.fill}
+          pointerEvents="none"
+          style={{ transition: "r 180ms ease, fill 180ms ease" }}
+        />
+        <circle
+          cx={shape.props.endX}
+          cy={shape.props.endY}
+          r={s.dot.r}
+          fill={s.dot.fill}
+          pointerEvents="none"
+          style={{ transition: "r 180ms ease, fill 180ms ease" }}
+        />
       </SVGContainer>
     );
   }
@@ -161,23 +204,9 @@ export class AiConnectionShapeUtil extends ShapeUtil<AiConnectionShape> {
     return new Path2D(getAiConnectionPath(shape.props));
   }
 
-  override canResize() {
-    return false;
-  }
-
-  override hideResizeHandles() {
-    return true;
-  }
-
-  override hideRotateHandle() {
-    return true;
-  }
-
-  override hideSelectionBoundsBg() {
-    return true;
-  }
-
-  override hideSelectionBoundsFg() {
-    return true;
-  }
+  override canResize() { return false; }
+  override hideResizeHandles() { return true; }
+  override hideRotateHandle() { return true; }
+  override hideSelectionBoundsBg() { return true; }
+  override hideSelectionBoundsFg() { return true; }
 }

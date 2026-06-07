@@ -11,6 +11,45 @@ import { getImageFromShape, getSelectedImage } from "./shape-helpers";
 import type { CanvasAction, ResultType } from "@/types";
 import { enqueueGenerationTask } from "./api-scheduler";
 
+// ─── Generation route resolver ───────────────────────────────────────
+
+export function resolveGenerationRoute(
+  actionType: ResultType | "text-to-image",
+  hasSourceImage: boolean
+): { endpoint: "generations" | "edits" | "mock"; requiredCapability: string } {
+  switch (actionType) {
+    case "text-to-image":
+      return { endpoint: "generations", requiredCapability: "text-to-image" };
+    case "similar":
+      return {
+        endpoint: hasSourceImage ? "edits" : "generations",
+        requiredCapability: hasSourceImage ? "image-to-image" : "text-to-image",
+      };
+    case "img2img":
+      return { endpoint: hasSourceImage ? "edits" : "mock", requiredCapability: "image-to-image" };
+    case "clean":
+      return { endpoint: hasSourceImage ? "edits" : "mock", requiredCapability: "image-to-image" };
+    case "removeBg":
+      return { endpoint: hasSourceImage ? "edits" : "mock", requiredCapability: "remove-bg" };
+    case "upscale":
+      return { endpoint: "mock", requiredCapability: "upscale" };
+    case "video":
+      return { endpoint: "mock", requiredCapability: "image-to-video" };
+    default:
+      return { endpoint: "mock", requiredCapability: "text-to-image" };
+  }
+}
+
+export const ACTION_TITLES: Record<string, string> = {
+  "text-to-image": "文生图",
+  similar: "生图",
+  img2img: "图生图",
+  clean: "洗图优化",
+  removeBg: "去背景",
+  upscale: "高清放大",
+  video: "图生视频",
+};
+
 // ─── SVG utilities ───────────────────────────────────────────────────
 
 function svgToDataUrl(svg: string) {
@@ -340,10 +379,11 @@ export async function executePromptGeneration(params: {
   const imgW = sw || 1024;
   const imgH = sh || 1024;
 
-  // Resolve position
-  let nodeX = 200;
-  let nodeY = 160;
-  if (sourceShapeId && editor.getShape(sourceShapeId)) {
+  // Resolve position (drop point > source shape > default)
+  const composer = useStudioStore.getState().promptComposer;
+  let nodeX = composer.dropX ?? 200;
+  let nodeY = composer.dropY ?? 160;
+  if (!composer.dropX && sourceShapeId && editor.getShape(sourceShapeId)) {
     const bounds = editor.getShapePageBounds(sourceShapeId);
     if (bounds) {
       nodeX = bounds.x;
@@ -479,94 +519,58 @@ function resolveSource(sourceId?: TLShapeId) {
 // ─── Public action functions ─────────────────────────────────────────
 // All open the Prompt Composer instead of executing directly.
 
-export function generateSimilar(sourceId?: TLShapeId) {
+function openGenUI(
+  actionType: ResultType | "text-to-image",
+  actionLabel: string,
+  sourceId?: TLShapeId
+) {
   const { editor } = useStudioStore.getState();
-  if (!editor) return;
-  const shape = resolveSource(sourceId);
-  useStudioStore.getState().openPromptComposer({
-    actionType: "similar",
-    actionLabel: "生成相似图",
-    sourceShapeId: shape?.id,
-    sourceAssetId: shape?.props.assetId || undefined,
-    sourceName: shape
-      ? ((shape.props.assetId ? (editor.getAsset(shape.props.assetId)?.props as Record<string, unknown>)?.name : undefined) as string) || "未命名"
-      : "",
+  const shape = sourceId ? resolveSource(sourceId) : null;
+  const aId = shape?.props.assetId;
+  const name = aId
+    ? ((editor?.getAsset(aId)?.props as Record<string, unknown>)?.name as string) || "未命名"
+    : "";
+  const srcUrl = aId
+    ? ((editor?.getAsset(aId)?.props as Record<string, unknown>)?.src as string) || ""
+    : "";
+  const w = shape?.props.w ?? 0;
+  const h = shape?.props.h ?? 0;
+
+  // Open bottom bar as the single primary UI
+  useStudioStore.getState().openBottomPromptBar({
+    actionType,
+    actionLabel,
+    sourceShapeId: shape?.id ?? undefined,
+    sourceAssetId: aId ?? undefined,
+    sourceName: name,
+    sourceWidth: Math.round(w),
+    sourceHeight: Math.round(h),
+    sourceUrl: srcUrl,
   });
+}
+
+export function generateSimilar(sourceId?: TLShapeId) {
+  openGenUI("similar", "生图", sourceId);
 }
 
 export function generateImg2Img(sourceId?: TLShapeId) {
-  const { editor } = useStudioStore.getState();
-  if (!editor) return;
-  const shape = resolveSource(sourceId);
-  useStudioStore.getState().openPromptComposer({
-    actionType: "img2img",
-    actionLabel: "参考图生图",
-    sourceShapeId: shape?.id,
-    sourceAssetId: shape?.props.assetId || undefined,
-    sourceName: shape
-      ? ((shape.props.assetId ? (editor.getAsset(shape.props.assetId)?.props as Record<string, unknown>)?.name : undefined) as string) || "未命名"
-      : "",
-  });
+  openGenUI("img2img", "参考图生图", sourceId);
 }
 
 export function generateUpscale(sourceId?: TLShapeId) {
-  const { editor } = useStudioStore.getState();
-  if (!editor) return;
-  const shape = resolveSource(sourceId);
-  useStudioStore.getState().openPromptComposer({
-    actionType: "upscale",
-    actionLabel: "高清放大",
-    sourceShapeId: shape?.id,
-    sourceAssetId: shape?.props.assetId || undefined,
-    sourceName: shape
-      ? ((shape.props.assetId ? (editor.getAsset(shape.props.assetId)?.props as Record<string, unknown>)?.name : undefined) as string) || "未命名"
-      : "",
-  });
+  openGenUI("upscale", "高清放大", sourceId);
 }
 
 export function generateClean(sourceId?: TLShapeId) {
-  const { editor } = useStudioStore.getState();
-  if (!editor) return;
-  const shape = resolveSource(sourceId);
-  useStudioStore.getState().openPromptComposer({
-    actionType: "clean",
-    actionLabel: "洗图优化",
-    sourceShapeId: shape?.id,
-    sourceAssetId: shape?.props.assetId || undefined,
-    sourceName: shape
-      ? ((shape.props.assetId ? (editor.getAsset(shape.props.assetId)?.props as Record<string, unknown>)?.name : undefined) as string) || "未命名"
-      : "",
-  });
+  openGenUI("clean", "洗图优化", sourceId);
 }
 
 export function generateRemoveBg(sourceId?: TLShapeId) {
-  const { editor } = useStudioStore.getState();
-  if (!editor) return;
-  const shape = resolveSource(sourceId);
-  useStudioStore.getState().openPromptComposer({
-    actionType: "removeBg",
-    actionLabel: "去背景",
-    sourceShapeId: shape?.id,
-    sourceAssetId: shape?.props.assetId || undefined,
-    sourceName: shape
-      ? ((shape.props.assetId ? (editor.getAsset(shape.props.assetId)?.props as Record<string, unknown>)?.name : undefined) as string) || "未命名"
-      : "",
-  });
+  openGenUI("removeBg", "去背景", sourceId);
 }
 
 export function generateVideo(sourceId?: TLShapeId) {
-  const { editor } = useStudioStore.getState();
-  if (!editor) return;
-  const shape = resolveSource(sourceId);
-  useStudioStore.getState().openPromptComposer({
-    actionType: "video",
-    actionLabel: "图生视频",
-    sourceShapeId: shape?.id,
-    sourceAssetId: shape?.props.assetId || undefined,
-    sourceName: shape
-      ? ((shape.props.assetId ? (editor.getAsset(shape.props.assetId)?.props as Record<string, unknown>)?.name : undefined) as string) || "未命名"
-      : "",
-  });
+  openGenUI("video", "图生视频", sourceId);
 }
 
 // ─── Run demo — stays direct, no scheduler needed ────────────────────

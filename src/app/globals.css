@@ -353,3 +353,14 @@ body.dialog-open {
 .tldraw-dark-override .tl-text-input {
   color: #d4d4d8;
 }
+
+/* Connection line flow animation */
+@keyframes connection-flow {
+  0% { stroke-dashoffset: 24; }
+  100% { stroke-dashoffset: 0; }
+}
+
+.connection-flow-animate {
+  animation: connection-flow 1.2s linear infinite;
+  stroke-dasharray: 12 12;
+}

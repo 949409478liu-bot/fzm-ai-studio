@@ -348,3 +348,99 @@ export async function generateOpenAiCompatibleImage(
     },
   };
 }
+
+// ─── Image editing (V0.5.4) ──────────────────────────────────────────
+
+const EDIT_TIMEOUT_MS = 300_000;
+
+export async function generateOpenAiCompatibleImageEdit(
+  config: ProviderConfig,
+  imageBlob: Blob,
+  params: {
+    model: string;
+    prompt: string;
+    size?: string;
+    quality?: string;
+    count?: number;
+  }
+): Promise<ImageGenerationResponse> {
+  const { baseUrl, apiKey } = config;
+  const normalizedBase = normalizeBaseUrl(baseUrl || "");
+  const model = params.model || config.defaultModel || "gpt-image-2";
+  const startedAt = performance.now();
+
+  const formData = new FormData();
+  formData.append("model", model);
+  formData.append("image", imageBlob, "source.png");
+  formData.append("prompt", params.prompt || "Enhance this image");
+  formData.append("n", String(params.count ?? 1));
+  formData.append("size", params.size || "auto");
+  formData.append("quality", params.quality || "auto");
+
+  const endpoint = `${normalizedBase}/images/edits`;
+
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: formData,
+      signal: AbortSignal.timeout(EDIT_TIMEOUT_MS),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("timeout") || msg.includes("abort")) {
+      throw new Error(`图片编辑超时（${EDIT_TIMEOUT_MS / 1000}秒）`);
+    }
+    throw new Error(`网络错误: ${msg.slice(0, 100)}`);
+  }
+
+  if (response.status === 401) throw new Error("API Key 无效 (401)");
+  if (response.status === 403) throw new Error("API Key 无权限或余额不足 (403)");
+  if (response.status === 404) throw new Error("接口 /images/edits 不存在 (404)。请确认中转站支持图片编辑接口");
+  if (response.status === 503) throw new Error("服务暂时不可用 (503)");
+  if (response.status === 504) throw new Error("网关超时 (504)，请稍后重试");
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`;
+    try {
+      const errBody = await response.text();
+      const parsed = JSON.parse(errBody);
+      detail = parsed?.error?.message || errBody.slice(0, 200);
+    } catch { /* use default */ }
+    throw new Error(`服务器返回错误 (${response.status}): ${detail}`);
+  }
+
+  let data: Record<string, unknown>;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error("服务器返回了无法解析的响应");
+  }
+
+  const items = data?.data as Array<Record<string, unknown>> | undefined;
+  if (!items || items.length === 0) {
+    throw new Error("响应中未包含生成的图片数据");
+  }
+
+  const assets: GeneratedAsset[] = [];
+  for (const item of items) {
+    const b64 = item.b64_json as string | undefined;
+    const url = item.url as string | undefined;
+    if (b64) {
+      assets.push({ url: "", width: 1024, height: 1024, mimeType: "image/png", b64Json: b64 });
+    } else if (url) {
+      assets.push({ url, width: 1024, height: 1024, mimeType: "image/png" });
+    }
+  }
+
+  if (assets.length === 0) {
+    throw new Error("生成的图片数据格式不支持");
+  }
+
+  return {
+    assets,
+    provider: "openai-compatible",
+    model,
+    metadata: { elapsed: Math.round(performance.now() - startedAt) },
+  };
+}

@@ -54,6 +54,8 @@ interface StudioState {
     sourceShapeId: TLShapeId | null;
     sourceAssetId: TLAssetId | null;
     sourceName: string;
+    dropX: number | null;
+    dropY: number | null;
   };
   openPromptComposer: (params: {
     actionType: ResultType | "text-to-image";
@@ -61,8 +63,35 @@ interface StudioState {
     sourceShapeId?: TLShapeId;
     sourceAssetId?: TLAssetId;
     sourceName?: string;
+    dropX?: number;
+    dropY?: number;
   }) => void;
   closePromptComposer: () => void;
+
+  // Bottom prompt bar
+  bottomPromptBar: {
+    open: boolean;
+    actionType: ResultType | "text-to-image";
+    actionLabel: string;
+    sourceShapeId: TLShapeId | null;
+    sourceAssetId: TLAssetId | null;
+    sourceName: string;
+    sourceWidth: number;
+    sourceHeight: number;
+    sourceUrl: string;
+  };
+  openBottomPromptBar: (params: {
+    actionType?: ResultType | "text-to-image";
+    actionLabel?: string;
+    sourceShapeId?: TLShapeId;
+    sourceAssetId?: TLAssetId;
+    sourceName?: string;
+    sourceWidth?: number;
+    sourceHeight?: number;
+    sourceUrl?: string;
+  }) => void;
+  closeBottomPromptBar: () => void;
+
   executePromptGeneration: (params: {
     prompt: string;
     providerId: string;
@@ -132,6 +161,8 @@ export const useStudioStore = create<StudioState>((set) => ({
     sourceShapeId: null,
     sourceAssetId: null,
     sourceName: "",
+    dropX: null,
+    dropY: null,
   },
   openPromptComposer: (params) =>
     set({
@@ -142,10 +173,41 @@ export const useStudioStore = create<StudioState>((set) => ({
         sourceShapeId: params.sourceShapeId ?? null,
         sourceAssetId: params.sourceAssetId ?? null,
         sourceName: params.sourceName ?? "",
+        dropX: params.dropX ?? null,
+        dropY: params.dropY ?? null,
       },
     }),
   closePromptComposer: () =>
     set((s) => ({ promptComposer: { ...s.promptComposer, open: false } })),
+
+  bottomPromptBar: {
+    open: false,
+    actionType: "similar",
+    actionLabel: "",
+    sourceShapeId: null,
+    sourceAssetId: null,
+    sourceName: "",
+    sourceWidth: 0,
+    sourceHeight: 0,
+    sourceUrl: "",
+  },
+  openBottomPromptBar: (params) =>
+    set((s) => ({
+      bottomPromptBar: {
+        open: true,
+        actionType: params.actionType ?? s.bottomPromptBar.actionType,
+        actionLabel: params.actionLabel ?? s.bottomPromptBar.actionLabel,
+        sourceShapeId: params.sourceShapeId ?? s.bottomPromptBar.sourceShapeId,
+        sourceAssetId: params.sourceAssetId ?? s.bottomPromptBar.sourceAssetId,
+        sourceName: params.sourceName ?? s.bottomPromptBar.sourceName,
+        sourceWidth: params.sourceWidth ?? s.bottomPromptBar.sourceWidth,
+        sourceHeight: params.sourceHeight ?? s.bottomPromptBar.sourceHeight,
+        sourceUrl: params.sourceUrl ?? s.bottomPromptBar.sourceUrl,
+      },
+    })),
+  closeBottomPromptBar: () =>
+    set((s) => ({ bottomPromptBar: { ...s.bottomPromptBar, open: false } })),
+
   executePromptGeneration: async () => {
     // Stub - real implementation injected below
   },

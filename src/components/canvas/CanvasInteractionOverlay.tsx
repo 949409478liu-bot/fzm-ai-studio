@@ -1,15 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   Copy,
   Droplets,
   ImageIcon,
-  Maximize2,
+  Plus,
   Scissors,
   Sparkles,
   Trash2,
   Video,
+  Type,
 } from "lucide-react";
 import { track, useEditor, type TLShapeId } from "@tldraw/tldraw";
 import { ConnectionPorts } from "./ConnectionPorts";
@@ -18,7 +19,6 @@ import {
   generateImg2Img,
   generateRemoveBg,
   generateSimilar,
-  generateUpscale,
   generateVideo,
 } from "@/lib/canvas-actions";
 import {
@@ -29,12 +29,11 @@ import { useStudioStore } from "@/lib/store";
 import type { ActionStatus } from "@/types";
 
 const actions = [
-  { label: "相似图", menuLabel: "生成相似图", icon: Sparkles, run: generateSimilar },
-  { label: "图生图", menuLabel: "参考图生图", icon: ImageIcon, run: generateImg2Img },
-  { label: "放大", menuLabel: "高清放大", icon: Maximize2, run: generateUpscale },
-  { label: "洗图", menuLabel: "洗图优化", icon: Droplets, run: generateClean },
-  { label: "去背景", menuLabel: "去背景", icon: Scissors, run: generateRemoveBg },
-  { label: "视频", menuLabel: "图生视频", icon: Video, run: generateVideo },
+  { label: "图生图", menuLabel: "图生图 · 参考当前图片生成新图", icon: ImageIcon, run: generateImg2Img, needsSource: true },
+  { label: "文生图", menuLabel: "文生图 · 文字描述生成图片", icon: Sparkles, run: generateSimilar },
+  { label: "去背景", menuLabel: "去背景 · 移除背景保留主体", icon: Scissors, run: generateRemoveBg, needsSource: true },
+  { label: "洗图", menuLabel: "洗图优化 · 提升清晰度和质感", icon: Droplets, run: generateClean, needsSource: true },
+  { label: "图生视频", menuLabel: "图生视频 · 基于图片生成视频", icon: Video, run: generateVideo, needsSource: true },
 ];
 
 const statusLabels: Record<ActionStatus, string> = {
@@ -52,6 +51,8 @@ export const CanvasInteractionOverlay = track(() => {
     y: number;
     shapeId: TLShapeId;
   } | null>(null);
+  const [createMenu, setCreateMenu] = useState<{ x: number; y: number } | null>(null);
+  const createMenuRef = useRef<HTMLDivElement>(null);
   const selectedIds = editor.getSelectedShapeIds();
   const selectionId = selectedIds.length === 1 ? selectedIds[0] : null;
   const selectedImage = selectionId
@@ -125,11 +126,11 @@ export const CanvasInteractionOverlay = track(() => {
             transform: "translate(-50%, -100%)",
           }}
         >
-          {actions.map(({ label, icon: Icon, run }) => (
+          {actions.map(({ label, menuLabel, icon: Icon, run }) => (
             <button
               key={label}
               type="button"
-              title={label}
+              title={menuLabel}
               aria-label={label}
               onClick={() => runAction(run, selectedImage.id)}
               className="flex h-6 w-7 items-center justify-center rounded text-zinc-500 transition-colors hover:bg-white/[0.06] hover:text-indigo-300"
@@ -219,6 +220,99 @@ export const CanvasInteractionOverlay = track(() => {
           </button>
         </div>
       )}
+
+      {/* "新建生成" button — bottom-center when no image selected */}
+      {!selectedImage && (
+        <div
+          className="pointer-events-auto absolute left-1/2 bottom-6 -translate-x-1/2 z-40"
+        >
+          <button
+            className="flex items-center gap-2 rounded-xl border border-white/[0.08] bg-[#15151c]/95 px-5 py-2.5 text-[13px] font-medium text-zinc-300 shadow-xl backdrop-blur-md hover:border-indigo-500/30 hover:text-zinc-100 transition-colors"
+            onClick={() => {
+              const container = editor.getContainer();
+              const rect = container.getBoundingClientRect();
+              setCreateMenu({ x: rect.width / 2, y: rect.height - 60 });
+            }}
+          >
+            <Plus size={15} className="text-indigo-400" />
+            新建生成
+          </button>
+        </div>
+      )}
+
+      {/* Create menu overlay */}
+      {createMenu && (
+        <div
+          ref={createMenuRef}
+          className="pointer-events-auto absolute z-50 w-48 rounded-xl border border-white/[0.08] bg-[#15151f]/98 p-1.5 shadow-2xl backdrop-blur-xl"
+          style={{
+            left: createMenu.x - 96,
+            top: createMenu.y - 260,
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <p className="text-[10px] text-zinc-500 px-2 py-1">新建生成</p>
+          <div className="h-px bg-white/[0.05] my-1" />
+          <CreateMenuItem
+            icon={Sparkles} label="文生图" desc="通过文字描述生成图片"
+            onClick={() => {
+              useStudioStore.getState().openBottomPromptBar({
+                actionType: "text-to-image", actionLabel: "文生图",
+              });
+              setCreateMenu(null);
+            }}
+          />
+          <CreateMenuItem
+            icon={Type} label="文本节点" desc="添加文本标注"
+            onClick={() => {
+              editor.setCurrentTool("text");
+              setCreateMenu(null);
+            }}
+          />
+          <CreateMenuItem
+            icon={ImageIcon} label="图片节点" desc="拖入或选择本地图片"
+            onClick={() => {
+              alert("请直接拖入图片文件到画布，或使用导入功能");
+              setCreateMenu(null);
+            }}
+          />
+          <div className="h-px bg-white/[0.05] my-1" />
+          <CreateMenuItem
+            icon={Video} label="文生视频" desc="即将接入" disabled
+          />
+          <div className="h-px bg-white/[0.05] my-1" />
+          <button
+            className="w-full text-left text-[11px] text-zinc-600 hover:text-zinc-400 px-2 py-1 rounded"
+            onClick={() => setCreateMenu(null)}
+          >
+            取消
+          </button>
+        </div>
+      )}
     </>
   );
 });
+
+function CreateMenuItem({
+  icon: Icon, label, desc, disabled, onClick,
+}: { icon: typeof Sparkles; label: string; desc: string; disabled?: boolean; onClick?: () => void }) {
+  return (
+    <button
+      className={`flex w-full items-start gap-2.5 rounded-lg px-2 py-2 text-left transition-colors ${
+        disabled
+          ? "opacity-30 cursor-not-allowed"
+          : "hover:bg-white/[0.04]"
+      }`}
+      disabled={disabled}
+      onClick={disabled ? undefined : onClick}
+    >
+      <Icon size={14} className={`mt-0.5 shrink-0 ${disabled ? "text-zinc-600" : "text-zinc-400"}`} />
+      <div>
+        <span className={`text-[12px] font-medium block ${disabled ? "text-zinc-600" : "text-zinc-300"}`}>
+          {label}
+        </span>
+        <span className="text-[10px] text-zinc-600 block">{desc}</span>
+      </div>
+    </button>
+  );
+}

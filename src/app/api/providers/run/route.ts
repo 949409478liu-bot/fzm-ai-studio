@@ -61,10 +61,11 @@ export async function POST(req: Request) {
     }
 
     // For image-to-image / inpaint / remove-bg: not available yet
-    if (body.request.actionType === "img2img" || body.request.actionType === "removeBg") {
+    const editActions = ["img2img", "clean", "removeBg", "inpaint"];
+    if (editActions.includes(body.request.actionType)) {
       return NextResponse.json(
-        { error: "图片编辑接口将在下一版本 (V0.5.4) 接入" },
-        { status: 501 }
+        { error: "图片编辑请使用 POST /api/providers/edit (multipart/form-data)" },
+        { status: 400 }
       );
     }
 

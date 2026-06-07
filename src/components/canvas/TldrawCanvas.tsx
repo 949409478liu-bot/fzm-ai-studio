@@ -15,6 +15,7 @@ import { AiConnectionShapeUtil } from "./AiConnectionShape";
 import { CanvasInteractionOverlay } from "./CanvasInteractionOverlay";
 import { PromptComposerOverlay } from "./PromptComposerOverlay";
 import { StatusSynchronizer } from "./StatusSynchronizer";
+import { BottomPromptBar } from "./BottomPromptBar";
 import { getImageFromShape } from "@/lib/shape-helpers";
 import { synchronizeAiConnections } from "@/lib/connection-system";
 import {
@@ -175,6 +176,7 @@ export function TldrawCanvas() {
         <WorkspacePersistence />
         <PromptComposerOverlay />
         <StatusSynchronizer />
+        <BottomPromptBar />
       </Tldraw>
     </div>
   );

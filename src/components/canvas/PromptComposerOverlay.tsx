@@ -2,11 +2,12 @@
 
 import { useState, useEffect } from "react";
 import { track, useEditor } from "@tldraw/tldraw";
-import { X, Sparkles, Loader2, Zap } from "lucide-react";
+import { X, Sparkles, Loader2, Zap, ImageIcon } from "lucide-react";
 import { useStudioStore } from "@/lib/store";
 import type { ProviderCapability } from "@/lib/providers/types";
 import { PROVIDER_TYPE_LABELS } from "@/lib/providers/types";
 import type { ResultType } from "@/types";
+import { resolveGenerationRoute } from "@/lib/canvas-actions";
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
@@ -20,26 +21,6 @@ const ASPECT_RATIOS = [
 
 const QUALITIES = ["low", "medium", "high"] as const;
 const COUNTS = [1, 2, 4] as const;
-
-/** Map actionType to the required ProviderCapability */
-function requiredCapability(actionType: ResultType | "text-to-image"): ProviderCapability {
-  switch (actionType) {
-    case "text-to-image":
-    case "similar":
-      return "text-to-image";
-    case "img2img":
-    case "clean":
-      return "image-to-image";
-    case "upscale":
-      return "upscale";
-    case "removeBg":
-      return "remove-bg";
-    case "video":
-      return "image-to-video";
-    default:
-      return "text-to-image";
-  }
-}
 
 // ─── Component ───────────────────────────────────────────────────────
 
@@ -60,7 +41,8 @@ export const PromptComposerOverlay = track(() => {
   const [submitting, setSubmitting] = useState(false);
 
   const actionType = composer.actionType as ResultType | "text-to-image";
-  const cap = requiredCapability(actionType);
+  const route = resolveGenerationRoute(actionType, !!composer.sourceAssetId);
+  const cap = route.requiredCapability as ProviderCapability;
 
   // Load providers if store is empty
   useEffect(() => {
@@ -107,6 +89,14 @@ export const PromptComposerOverlay = track(() => {
 
   const handleSubmit = async () => {
     if (!prompt.trim()) return;
+
+    // Guard: edit actions require a source image
+    const editActions = ["img2img", "clean", "removeBg", "inpaint", "video"];
+    if (editActions.includes(actionType) && !composer.sourceAssetId) {
+      alert("请先选择或连接一张参考图。\n点击画布中的图片后再操作，或从图片右侧端口拉线到空白处。");
+      return;
+    }
+
     if (hasRealProviders && !providerId) {
       alert("请选择 Provider");
       return;
@@ -186,6 +176,9 @@ export const PromptComposerOverlay = track(() => {
           <span className="text-[14px] font-semibold text-zinc-100">
             {composer.actionLabel || "AI 生成"}
           </span>
+          <span className="text-[10px] text-zinc-600">
+            {route.endpoint === "edits" ? "图片编辑" : route.endpoint === "generations" ? "文生图" : "模拟生成"}
+          </span>
           {composer.sourceName && (
             <span className="text-[11px] text-zinc-500 ml-1 truncate max-w-[160px]">
               · {composer.sourceName}
@@ -200,6 +193,47 @@ export const PromptComposerOverlay = track(() => {
           <X size={15} />
         </button>
       </div>
+
+      {/* Referenced image info */}
+      {composer.sourceName && (
+        <div className="px-5 pb-3">
+          <div className="flex items-center gap-2 bg-white/[0.02] border border-white/[0.05] rounded-lg p-2">
+            <div className="w-9 h-9 rounded-md bg-white/[0.03] border border-white/[0.05] flex items-center justify-center shrink-0 overflow-hidden">
+              {composer.sourceAssetId ? (
+                <RefImagePreview assetId={composer.sourceAssetId} />
+              ) : (
+                <ImageIcon size={13} className="text-zinc-600" />
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] text-zinc-500 font-medium">已引用图片</p>
+              <p className="text-[11px] text-zinc-300 truncate">{composer.sourceName}</p>
+            </div>
+            <button
+              className="text-[10px] text-zinc-600 hover:text-red-400 px-1 shrink-0"
+              onClick={() => {
+                useStudioStore.getState().openPromptComposer({
+                  actionType: composer.actionType as "text-to-image" | "similar",
+                  actionLabel: "文生图",
+                });
+              }}
+            >
+              移除引用
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* No reference warning for edit actions */}
+      {!composer.sourceName && composer.actionType !== "text-to-image" && composer.actionType !== "similar" && (
+        <div className="px-5 pb-3">
+          <div className="rounded-lg bg-red-500/5 border border-red-500/10 p-2">
+            <p className="text-[10px] text-red-400/80">
+              该操作需要参考图。请选择画布中的图片后重试。
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Prompt area */}
       <div className="px-5 pb-4">
@@ -342,3 +376,14 @@ export const PromptComposerOverlay = track(() => {
     </div>
   );
 });
+
+function RefImagePreview({ assetId }: { assetId: string }) {
+  const editor = useEditor();
+  if (!editor) return <ImageIcon size={14} className="text-zinc-600" />;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const asset = editor.getAsset(assetId as any);
+  const src = (asset?.props as Record<string, unknown>)?.src as string;
+  if (!src) return <ImageIcon size={14} className="text-zinc-600" />;
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={src} alt="" className="w-full h-full object-cover" />;
+}
