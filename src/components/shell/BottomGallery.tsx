@@ -1,23 +1,15 @@
 "use client";
 
+import Image from "next/image";
 import { ImageIcon, Sparkles } from "lucide-react";
 import { useStudioStore } from "@/lib/store";
-import type { ResultType } from "@/types";
-
-const TYPE_LABELS: Record<ResultType, string> = {
-  similar: "相似图",
-  img2img: "图生图",
-  upscale: "高清放大",
-  clean: "已洗图",
-  removeBg: "去背景",
-  video: "视频",
-};
+import type { TLShapeId } from "@tldraw/tldraw";
 
 export function BottomGallery() {
   const results = useStudioStore((s) => s.results);
   const editor = useStudioStore((s) => s.editor);
 
-  const handleClick = (shapeId: string) => {
+  const handleClick = (shapeId: TLShapeId) => {
     if (editor) {
       editor.select(shapeId);
       editor.zoomToSelection({ animation: { duration: 300 } });
@@ -47,7 +39,13 @@ export function BottomGallery() {
               className="w-[84px] h-[56px] rounded-lg border border-white/[0.08] bg-white/[0.02] flex-shrink-0 flex flex-col items-center justify-center gap-0.5 transition-all duration-200 hover:border-indigo-400/30 hover:bg-indigo-500/5 cursor-pointer relative overflow-hidden"
             >
               {r.imageUrl ? (
-                <img src={r.imageUrl} alt={r.typeLabel} className="absolute inset-0 w-full h-full object-cover opacity-60" />
+                <Image
+                  src={r.imageUrl}
+                  alt={r.typeLabel}
+                  fill
+                  unoptimized
+                  className="object-cover opacity-60"
+                />
               ) : (
                 <div className="absolute inset-0 bg-indigo-500/5" />
               )}

@@ -1,6 +1,12 @@
-import type { Editor } from "@tldraw/tldraw";
+import type {
+  Editor,
+  TLAssetId,
+  TLImageAsset,
+  TLShapeId,
+} from "@tldraw/tldraw";
+import { isShapeId } from "@tldraw/tldraw";
 import { useStudioStore, uid, assetUid } from "./store";
-import type { GalleryResult, ResultType } from "@/types";
+import type { ResultType } from "@/types";
 
 // ─── SVG utilities ───────────────────────────────────────────────────
 
@@ -16,7 +22,7 @@ function createSvgImageShape(
   h: number,
   svg: string,
   name: string
-): string {
+): TLShapeId {
   const assetId = assetUid();
   const shapeId = uid();
 
@@ -34,7 +40,7 @@ function createSvgImageShape(
         isAnimated: false,
       },
       meta: {},
-    } as any,
+    } satisfies TLImageAsset,
   ]);
 
   editor.createShape({
@@ -46,7 +52,7 @@ function createSvgImageShape(
       assetId,
       w,
       h,
-    } as any,
+    },
   });
 
   return shapeId;
@@ -88,10 +94,27 @@ function getSelectedImage(editor: Editor) {
   return shape;
 }
 
+function getResultPosition(
+  sourceBounds: { x: number; y: number; w: number; h: number },
+  resultWidth: number,
+  resultHeight: number
+) {
+  const slot = useStudioStore.getState().results.length;
+  const column = slot % 3;
+  const row = Math.floor(slot / 3);
+  const columnWidth = Math.max(sourceBounds.w, resultWidth) + 120;
+  const rowHeight = Math.max(sourceBounds.h, resultHeight) + 80;
+
+  return {
+    x: sourceBounds.x + sourceBounds.w + 160 + column * columnWidth,
+    y: sourceBounds.y + row * rowHeight,
+  };
+}
+
 function createResultCard(
   editor: Editor,
-  sourceId: string,
-  sourceAssetId: string,
+  sourceId: TLShapeId,
+  sourceAssetId: TLAssetId,
   _resultType: ResultType,
   label: string,
   extraScale = 1
@@ -99,11 +122,13 @@ function createResultCard(
   const sourceBounds = editor.getShapePageBounds(sourceId);
   if (!sourceBounds) return null;
 
-  const gap = 260;
-  const cardX = sourceBounds.x + sourceBounds.w + gap;
-  const cardY = sourceBounds.y;
   const cardW = sourceBounds.w * extraScale;
   const cardH = sourceBounds.h * extraScale;
+  const { x: cardX, y: cardY } = getResultPosition(
+    sourceBounds,
+    cardW,
+    cardH
+  );
 
   const sourceAsset = sourceAssetId ? editor.getAsset(sourceAssetId) : null;
   const assetSrc =
@@ -131,11 +156,12 @@ function createResultCard(
       assetId: sourceAssetId,
       w: cardW,
       h: cardH,
-    } as any,
+    },
   });
 
   editor.groupShapes([labelId, imgId]);
-  const groupId = editor.getShape(imgId)?.parentId || imgId;
+  const parentId = editor.getShape(imgId)?.parentId;
+  const groupId = isShapeId(parentId) ? parentId : imgId;
 
   // Arrow
   const arrowId = uid();
@@ -146,8 +172,8 @@ function createResultCard(
     y: 0,
     props: {
       color: "violet",
-      start: { type: "point", x: sourceBounds.x + sourceBounds.w, y: sourceBounds.y + sourceBounds.h / 2 },
-      end: { type: "point", x: cardX, y: cardY + cardH / 2 },
+      start: { x: sourceBounds.x + sourceBounds.w, y: sourceBounds.y + sourceBounds.h / 2 },
+      end: { x: cardX, y: cardY + cardH / 2 },
     },
   });
 
@@ -158,6 +184,7 @@ function createResultCard(
     typeLabel: label,
     shapeId: groupId,
   });
+  editor.select(sourceId);
 }
 
 // ─── Public action functions ────────────────────────────────────────
@@ -167,7 +194,8 @@ export function generateSimilar() {
   if (!editor) return;
   const shape = getSelectedImage(editor);
   if (!shape) return alert("请先在画布中选择一张图片");
-  createResultCard(editor, shape.id, shape.props.assetId as string, "similar", "相似图");
+  if (!shape.props.assetId) return;
+  createResultCard(editor, shape.id, shape.props.assetId, "similar", "相似图");
 }
 
 export function generateImg2Img() {
@@ -175,7 +203,8 @@ export function generateImg2Img() {
   if (!editor) return;
   const shape = getSelectedImage(editor);
   if (!shape) return alert("请先在画布中选择一张图片");
-  createResultCard(editor, shape.id, shape.props.assetId as string, "img2img", "图生图");
+  if (!shape.props.assetId) return;
+  createResultCard(editor, shape.id, shape.props.assetId, "img2img", "图生图");
 }
 
 export function generateUpscale() {
@@ -183,7 +212,8 @@ export function generateUpscale() {
   if (!editor) return;
   const shape = getSelectedImage(editor);
   if (!shape) return alert("请先在画布中选择一张图片");
-  createResultCard(editor, shape.id, shape.props.assetId as string, "upscale", "高清放大", 1.5);
+  if (!shape.props.assetId) return;
+  createResultCard(editor, shape.id, shape.props.assetId, "upscale", "高清放大", 1.5);
 }
 
 export function generateClean() {
@@ -191,7 +221,8 @@ export function generateClean() {
   if (!editor) return;
   const shape = getSelectedImage(editor);
   if (!shape) return alert("请先在画布中选择一张图片");
-  createResultCard(editor, shape.id, shape.props.assetId as string, "clean", "已洗图");
+  if (!shape.props.assetId) return;
+  createResultCard(editor, shape.id, shape.props.assetId, "clean", "已洗图");
 }
 
 export function generateRemoveBg() {
@@ -199,7 +230,8 @@ export function generateRemoveBg() {
   if (!editor) return;
   const shape = getSelectedImage(editor);
   if (!shape) return alert("请先在画布中选择一张图片");
-  createResultCard(editor, shape.id, shape.props.assetId as string, "removeBg", "去背景");
+  if (!shape.props.assetId) return;
+  createResultCard(editor, shape.id, shape.props.assetId, "removeBg", "去背景");
 }
 
 export function generateVideo() {
@@ -211,11 +243,13 @@ export function generateVideo() {
   const sourceBounds = editor.getShapePageBounds(shape.id);
   if (!sourceBounds) return;
 
-  const gap = 260;
   const cardW = 320;
   const cardH = 200;
-  const cardX = sourceBounds.x + sourceBounds.w + gap;
-  const cardY = sourceBounds.y;
+  const { x: cardX, y: cardY } = getResultPosition(
+    sourceBounds,
+    cardW,
+    cardH
+  );
 
   const labelId = createSvgImageShape(
     editor, cardX, cardY - 34, 120, 28,
@@ -228,7 +262,8 @@ export function generateVideo() {
   );
 
   editor.groupShapes([labelId, videoId]);
-  const groupId = editor.getShape(videoId)?.parentId || videoId;
+  const parentId = editor.getShape(videoId)?.parentId;
+  const groupId = isShapeId(parentId) ? parentId : videoId;
 
   const arrowId = uid();
   editor.createShape({
@@ -238,8 +273,8 @@ export function generateVideo() {
     y: 0,
     props: {
       color: "violet",
-      start: { type: "point", x: sourceBounds.x + sourceBounds.w, y: sourceBounds.y + sourceBounds.h / 2 },
-      end: { type: "point", x: cardX, y: cardY + cardH / 2 },
+      start: { x: sourceBounds.x + sourceBounds.w, y: sourceBounds.y + sourceBounds.h / 2 },
+      end: { x: cardX, y: cardY + cardH / 2 },
     },
   });
 
@@ -250,6 +285,7 @@ export function generateVideo() {
     typeLabel: "视频",
     shapeId: groupId,
   });
+  editor.select(shape.id);
 }
 
 export function runDemo(editor: Editor) {
@@ -295,8 +331,8 @@ export function runDemo(editor: Editor) {
     y: 0,
     props: {
       color: "violet",
-      start: { type: "point", x: cx + cardW, y: cy + cardH / 2 },
-      end: { type: "point", x: simX, y: cy + cardH / 2 },
+      start: { x: cx + cardW, y: cy + cardH / 2 },
+      end: { x: simX, y: cy + cardH / 2 },
     },
   });
 
@@ -323,8 +359,8 @@ export function runDemo(editor: Editor) {
     y: 0,
     props: {
       color: "violet",
-      start: { type: "point", x: cx + cardW, y: cy + cardH / 2 },
-      end: { type: "point", x: vidX, y: vidY + vidH / 2 },
+      start: { x: cx + cardW, y: cy + cardH / 2 },
+      end: { x: vidX, y: vidY + vidH / 2 },
     },
   });
 
@@ -336,8 +372,8 @@ export function runDemo(editor: Editor) {
     y: 0,
     props: {
       color: "violet",
-      start: { type: "point", x: simX + cardW, y: cy + cardH / 2 },
-      end: { type: "point", x: vidX, y: vidY + vidH / 2 },
+      start: { x: simX + cardW, y: cy + cardH / 2 },
+      end: { x: vidX, y: vidY + vidH / 2 },
     },
   });
 

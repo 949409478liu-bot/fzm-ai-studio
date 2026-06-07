@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { ToolType, ApiSettings, GalleryResult, SelectedShapeInfo } from "@/types";
-import type { Editor } from "@tldraw/tldraw";
+import type { Editor, TLAssetId, TLShapeId } from "@tldraw/tldraw";
 
 interface StudioState {
   // Editor reference
@@ -27,8 +27,8 @@ interface StudioState {
 }
 
 let nextId = 0;
-export const uid = () => `shape:fzm-${Date.now()}-${++nextId}`;
-export const assetUid = () => `asset:fzm-${Date.now()}-${++nextId}`;
+export const uid = () => `shape:fzm-${Date.now()}-${++nextId}` as TLShapeId;
+export const assetUid = () => `asset:fzm-${Date.now()}-${++nextId}` as TLAssetId;
 
 export const useStudioStore = create<StudioState>((set) => ({
   editor: null,

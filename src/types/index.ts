@@ -18,20 +18,20 @@ export type ResultType =
   | "video";
 
 export interface GalleryResult {
-  id: string;
+  id: TLShapeId;
   imageUrl: string;
   type: ResultType;
   typeLabel: string;
-  shapeId: string;
+  shapeId: TLShapeId;
 }
 
 export interface SelectedShapeInfo {
-  id: string;
+  id: TLShapeId;
   type: string;
   name: string;
   width: number;
   height: number;
-  assetId: string;
+  assetId: TLAssetId | "";
   imageUrl: string;
 }
 
@@ -51,3 +51,4 @@ export interface ApiSettings {
   comfyuiUrl: string;
   klingKey: string;
 }
+import type { TLAssetId, TLShapeId } from "@tldraw/tldraw";

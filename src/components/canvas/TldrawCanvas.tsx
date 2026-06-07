@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import { Tldraw, useEditor, track, createTLStore, defaultShapeUtils } from "@tldraw/tldraw";
+import {
+  Tldraw,
+  useEditor,
+  track,
+  createTLStore,
+  defaultShapeUtils,
+} from "@tldraw/tldraw";
 import "@tldraw/tldraw/tldraw.css";
 import { useStudioStore } from "@/lib/store";
 import type { SelectedShapeInfo } from "@/types";
@@ -18,7 +24,7 @@ const SelectionListener = track(() => {
       if (ids.length === 1) {
         const shape = editor.getShape(ids[0]);
         if (shape && shape.type === "image") {
-          const assetId = shape.props.assetId as string | undefined;
+          const assetId = shape.props.assetId;
           const asset = assetId ? editor.getAsset(assetId) : null;
           const info: SelectedShapeInfo = {
             id: shape.id,

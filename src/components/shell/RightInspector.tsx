@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { useStudioStore } from "@/lib/store";
 import {
   Sparkles,
@@ -58,9 +59,15 @@ export function RightInspector() {
     <aside className="w-[264px] glass border-l border-white/[0.04] shrink-0 flex flex-col overflow-y-auto z-20">
       {/* Preview */}
       <div className="p-2.5">
-        <div className="rounded-lg overflow-hidden border border-white/[0.06] bg-black/30 aspect-[4/3] flex items-center justify-center">
+        <div className="relative rounded-lg overflow-hidden border border-white/[0.06] bg-black/30 aspect-[4/3] flex items-center justify-center">
           {selected.imageUrl ? (
-            <img src={selected.imageUrl} alt={selected.name} className="w-full h-full object-contain" />
+            <Image
+              src={selected.imageUrl}
+              alt={selected.name}
+              fill
+              unoptimized
+              className="object-contain"
+            />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-zinc-600 text-xs">无预览</div>
           )}
