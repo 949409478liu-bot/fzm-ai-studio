@@ -7,8 +7,10 @@ import type {
   CanvasConnection,
   CanvasAction,
   ActionStatus,
+  ResultType,
 } from "@/types";
 import type { Editor, TLAssetId, TLShapeId } from "@tldraw/tldraw";
+import type { ProviderConfigForClient, ProviderCapability } from "./providers/types";
 
 interface StudioState {
   // Editor reference
@@ -38,6 +40,40 @@ interface StudioState {
   addAction: (action: CanvasAction) => void;
   setActions: (actions: CanvasAction[]) => void;
   updateActionStatus: (id: string, status: ActionStatus) => void;
+
+  // Provider cache (loaded from API)
+  providers: ProviderConfigForClient[];
+  setProviders: (providers: ProviderConfigForClient[]) => void;
+  getDefaultProviderForCapability: (cap: ProviderCapability) => ProviderConfigForClient | null;
+
+  // Prompt composer
+  promptComposer: {
+    open: boolean;
+    actionType: ResultType | "text-to-image";
+    actionLabel: string;
+    sourceShapeId: TLShapeId | null;
+    sourceAssetId: TLAssetId | null;
+    sourceName: string;
+  };
+  openPromptComposer: (params: {
+    actionType: ResultType | "text-to-image";
+    actionLabel: string;
+    sourceShapeId?: TLShapeId;
+    sourceAssetId?: TLAssetId;
+    sourceName?: string;
+  }) => void;
+  closePromptComposer: () => void;
+  executePromptGeneration: (params: {
+    prompt: string;
+    providerId: string;
+    model: string;
+    size: string;
+    quality: string;
+    actionType: ResultType | "text-to-image";
+    actionLabel: string;
+    sourceShapeId?: TLShapeId;
+    sourceAssetId?: TLAssetId;
+  }) => Promise<void>;
 
   // API settings
   isApiSettingsOpen: boolean;
@@ -85,6 +121,35 @@ export const useStudioStore = create<StudioState>((set) => ({
       ),
     })),
 
+  providers: [],
+  setProviders: (providers) => set({ providers }),
+  getDefaultProviderForCapability: () => null, // overridden below
+
+  promptComposer: {
+    open: false,
+    actionType: "similar",
+    actionLabel: "",
+    sourceShapeId: null,
+    sourceAssetId: null,
+    sourceName: "",
+  },
+  openPromptComposer: (params) =>
+    set({
+      promptComposer: {
+        open: true,
+        actionType: params.actionType,
+        actionLabel: params.actionLabel,
+        sourceShapeId: params.sourceShapeId ?? null,
+        sourceAssetId: params.sourceAssetId ?? null,
+        sourceName: params.sourceName ?? "",
+      },
+    }),
+  closePromptComposer: () =>
+    set((s) => ({ promptComposer: { ...s.promptComposer, open: false } })),
+  executePromptGeneration: async () => {
+    // Stub - real implementation injected below
+  },
+
   isApiSettingsOpen: false,
   setApiSettingsOpen: (open) => set({ isApiSettingsOpen: open }),
 
@@ -98,3 +163,18 @@ export const useStudioStore = create<StudioState>((set) => ({
   setApiSettings: (partial) =>
     set((s) => ({ apiSettings: { ...s.apiSettings, ...partial } })),
 }));
+
+// Override with real implementations
+useStudioStore.setState({
+  getDefaultProviderForCapability: (cap: ProviderCapability) => {
+    const { providers } = useStudioStore.getState();
+    const match = providers.find(
+      (p) => p.enabled && p.capabilities.includes(cap)
+    );
+    return match ?? null;
+  },
+  executePromptGeneration: async (params) => {
+    const { executePromptGeneration: fn } = await import("./canvas-actions");
+    return fn(params);
+  },
+});

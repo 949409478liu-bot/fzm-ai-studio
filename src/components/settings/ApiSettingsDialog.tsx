@@ -78,6 +78,7 @@ export function ApiSettingsDialog() {
         if (res.ok && !cancelled) {
           const data = await res.json();
           setProviders(data.providers || []);
+        useStudioStore.getState().setProviders(data.providers || []);
         }
       } catch {
         // ignore
@@ -95,6 +96,7 @@ export function ApiSettingsDialog() {
       if (res.ok) {
         const data = await res.json();
         setProviders(data.providers || []);
+        useStudioStore.getState().setProviders(data.providers || []);
       }
     } catch {
       // ignore

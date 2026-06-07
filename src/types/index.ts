@@ -16,7 +16,8 @@ export type ResultType =
   | "upscale"
   | "clean"
   | "removeBg"
-  | "video";
+  | "video"
+  | "text-to-image";
 
 export type ActionStatus = "queued" | "running" | "completed" | "failed";
 
@@ -38,6 +39,9 @@ export interface CanvasAction {
   status: ActionStatus;
   provider?: string;
   error?: string;
+  promptNodeId?: TLShapeId;
+  placeholderId?: TLShapeId;
+  model?: string;
 }
 
 export interface CanvasConnection {

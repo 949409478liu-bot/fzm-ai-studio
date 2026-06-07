@@ -4,6 +4,7 @@ import type { ResultType } from "@/types";
 
 export type ProviderName =
   | "mock"
+  | "openai-compatible"
   | "gemini"
   | "openai"
   | "fal"
@@ -113,15 +114,18 @@ export interface GeneratedAsset {
   width: number;
   height: number;
   mimeType?: string;
+  /** Base64-encoded image data (server→client transfer, no Blob in JSON) */
+  b64Json?: string;
 }
 
 export interface ImageGenerationResponse {
   assets: GeneratedAsset[];
-  provider: ProviderName;
+  provider: ProviderName | string;
   model: string;
   metadata: {
     elapsed: number;
     seed?: number;
+    size?: string;
   };
 }
 
@@ -136,6 +140,7 @@ export interface ProviderAdapter {
 
 export const PROVIDER_LABELS: Record<ProviderName, string> = {
   mock: "Mock（模拟）",
+  "openai-compatible": "OpenAI Compatible",
   gemini: "Gemini / Nano Banana",
   openai: "OpenAI / GPT Image",
   fal: "fal.ai",

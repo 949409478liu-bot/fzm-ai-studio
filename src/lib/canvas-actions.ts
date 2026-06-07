@@ -73,6 +73,57 @@ function createCardSvg(label: string, w: number, h: number) {
 </svg>`;
 }
 
+function createGeneratingPlaceholderSvg(
+  status: "queued" | "running" | "failed",
+  model: string,
+  errorMsg?: string
+) {
+  const label =
+    status === "queued" ? "排队中..." :
+    status === "running" ? "正在生成图片..." :
+    "生成失败";
+  const subLabel =
+    status === "running" ? `${model} · 预计 1-3 分钟` :
+    status === "failed" ? (errorMsg || "未知错误") : "";
+  const accentColor =
+    status === "failed" ? "rgba(252,165,165,0.2)" : "rgba(129,140,248,0.15)";
+  const borderColor =
+    status === "failed" ? "rgba(252,165,165,0.4)" : "rgba(139,92,246,0.35)";
+  const textColor =
+    status === "failed" ? "#fca5a5" : "#c7d2fe";
+
+  const w = 320;
+  const h = 220;
+
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+  <rect x="1" y="1" width="${w - 2}" height="${h - 2}" rx="16" fill="#111118" stroke="${borderColor}" stroke-width="1.5"/>`;
+
+  if (status !== "failed") {
+    // Animated spinner circles
+    svg += `
+  <circle cx="160" cy="75" r="24" fill="none" stroke="${accentColor}" stroke-width="3" stroke-dasharray="120 40"/>
+  <circle cx="160" cy="75" r="18" fill="none" stroke="${borderColor}" stroke-width="2" opacity="0.6"/>
+  <text x="160" y="80" text-anchor="middle" font-family="Arial" font-size="14" fill="${textColor}">⟳</text>`;
+  } else {
+    svg += `
+  <circle cx="160" cy="75" r="24" fill="none" stroke="rgba(252,165,165,0.25)" stroke-width="2"/>
+  <text x="160" y="80" text-anchor="middle" font-family="Arial" font-size="14" fill="#fca5a5">✕</text>`;
+  }
+
+  svg += `
+  <text x="160" y="125" text-anchor="middle" font-family="Arial,sans-serif" font-size="14" font-weight="600" fill="${textColor}">${label}</text>
+  <text x="160" y="147" text-anchor="middle" font-family="Arial,sans-serif" font-size="11" fill="#71717a">${subLabel}</text>
+  <text x="160" y="170" text-anchor="middle" font-family="Arial,sans-serif" font-size="10" fill="#52525b">模型: ${model}</text>`;
+
+  if (status === "failed") {
+    svg += `
+  <text x="160" y="195" text-anchor="middle" font-family="Arial,sans-serif" font-size="10" fill="#f87171">点击右侧面板「重新运行」重试</text>`;
+  }
+
+  svg += `</svg>`;
+  return svg;
+}
+
 function createVideoPlaceholderSvg() {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200" viewBox="0 0 320 200">
   <rect x="1" y="1" width="318" height="198" rx="18" fill="#11111a" stroke="rgba(139,92,246,0.45)" stroke-width="2"/>
@@ -112,6 +163,9 @@ function createResultCard(
   label: string,
   extraScale = 1
 ): TLShapeId | null {
+  // Guard: tldraw requires asset IDs to start with "asset:"
+  if (!sourceAssetId || !String(sourceAssetId).startsWith("asset:")) return null;
+
   const sourceBounds = editor.getShapePageBounds(sourceId);
   if (!sourceBounds) return null;
 
@@ -119,7 +173,7 @@ function createResultCard(
   const cardH = sourceBounds.h * extraScale;
   const { x: cardX, y: cardY } = getResultPosition(sourceBounds, cardW, cardH);
 
-  const sourceAsset = sourceAssetId ? editor.getAsset(sourceAssetId) : null;
+  const sourceAsset = editor.getAsset(sourceAssetId);
   const assetSrc =
     (sourceAsset?.props as Record<string, unknown>)?.src as string || "";
 
@@ -159,46 +213,256 @@ function createResultCard(
   return null;
 }
 
-function createVideoResultCard(
+/** Create a result card from a real provider's generated image data URL. */
+function createRealImageCard(
   editor: Editor,
-  sourceId: TLShapeId
+  sourceId: TLShapeId,
+  dataUrl: string,
+  label: string,
+  width: number,
+  height: number
 ): TLShapeId | null {
   const sourceBounds = editor.getShapePageBounds(sourceId);
   if (!sourceBounds) return null;
 
-  const cardW = 320;
-  const cardH = 200;
-  const { x: cardX, y: cardY } = getResultPosition(sourceBounds, cardW, cardH);
+  const maxW = 400;
+  const scale = Math.min(1, maxW / width);
+  const cardW = Math.round(width * scale);
+  const cardH = Math.round(height * scale);
+  const { x: cardX, y: cardY } = getResultPosition({ ...sourceBounds, w: cardW, h: cardH }, cardW, cardH);
 
+  const assetId = assetUid();
+  const imgId = uid();
+
+  // Create a NEW tldraw asset from the generated data URL
+  editor.createAssets([
+    {
+      id: assetId,
+      typeName: "asset",
+      type: "image",
+      props: {
+        name: label,
+        src: dataUrl,
+        w: cardW,
+        h: cardH,
+        mimeType: "image/png",
+        isAnimated: false,
+      },
+      meta: {},
+    } satisfies TLImageAsset,
+  ]);
+
+  // Label
   const labelId = createSvgImageShape(
     editor, cardX, cardY - 34, 120, 28,
-    createLabelSvg("视频"), "视频-标签"
+    createLabelSvg(label), `${label}-标签`
   );
 
-  const videoId = createSvgImageShape(
-    editor, cardX, cardY, cardW, cardH,
-    createVideoPlaceholderSvg(), "视频-占位"
-  );
+  // Image shape with NEW asset
+  editor.createShape({
+    id: imgId,
+    type: "image",
+    x: cardX,
+    y: cardY,
+    props: { assetId, w: cardW, h: cardH },
+  });
 
-  editor.groupShapes([labelId, videoId]);
+  editor.groupShapes([labelId, imgId]);
 
-  createAiConnection(editor, sourceId, videoId, { type: "auto", label: "视频" });
+  createAiConnection(editor, sourceId, imgId, { type: "auto", label });
 
-  const parentId = editor.getShape(videoId)?.parentId;
-  const groupId = isShapeId(parentId) ? parentId : videoId;
+  const parentId = editor.getShape(imgId)?.parentId;
+  const groupId = isShapeId(parentId) ? parentId : imgId;
 
   useStudioStore.getState().addResult({
-    id: videoId,
-    imageUrl: "",
-    type: "video",
-    typeLabel: "视频",
+    id: imgId,
+    imageUrl: dataUrl,
+    type: "similar",
+    typeLabel: label,
     shapeId: groupId,
   });
 
-  return videoId;
+  return imgId;
 }
 
-// ─── Action enqueue helper ───────────────────────────────────────────
+// ─── Prompt node SVG ─────────────────────────────────────────────────
+
+function createPromptNodeSvg(
+  actionLabel: string,
+  promptText: string,
+  model: string,
+  status: string
+) {
+  const truncated = promptText.length > 40
+    ? promptText.slice(0, 40) + "..."
+    : promptText;
+  const statusLabel =
+    status === "queued" ? "排队中" :
+    status === "running" ? "生成中" :
+    status === "completed" ? "已完成" : "失败";
+  const statusColor =
+    status === "completed" ? "#a7f3d0" :
+    status === "running" ? "#c7d2fe" :
+    status === "failed" ? "#fca5a5" : "#71717a";
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="280" height="70" viewBox="0 0 280 70">
+  <rect x="1" y="1" width="278" height="68" rx="12" fill="#13131f" stroke="rgba(139,92,246,0.35)" stroke-width="1.5"/>
+  <text x="14" y="22" font-family="Arial,sans-serif" font-size="12" font-weight="600" fill="#a5b4fc">${actionLabel}</text>
+  <text x="14" y="40" font-family="Arial,sans-serif" font-size="11" fill="#71717a">${truncated}</text>
+  <text x="14" y="56" font-family="Arial,sans-serif" font-size="10" fill="#52525b">${model}</text>
+  <rect x="210" y="10" width="58" height="18" rx="6" fill="rgba(129,140,248,0.1)" stroke="rgba(129,140,248,0.2)"/>
+  <text x="239" y="23" text-anchor="middle" font-family="Arial,sans-serif" font-size="9" fill="${statusColor}">${statusLabel}</text>
+</svg>`;
+}
+
+// ─── Execute from PromptComposer ─────────────────────────────────────
+
+export async function executePromptGeneration(params: {
+  prompt: string;
+  providerId: string;
+  model: string;
+  size: string;
+  quality: string;
+  actionType: ResultType | "text-to-image";
+  actionLabel: string;
+  sourceShapeId?: TLShapeId;
+  sourceAssetId?: TLAssetId;
+}) {
+  const { editor } = useStudioStore.getState();
+  if (!editor) return;
+
+  const {
+    prompt, providerId, model, size,
+    actionType, actionLabel, sourceShapeId, sourceAssetId,
+  } = params;
+
+  const [sw, sh] = size.split("x").map(Number);
+  const imgW = sw || 1024;
+  const imgH = sh || 1024;
+
+  // Resolve position
+  let nodeX = 200;
+  let nodeY = 160;
+  if (sourceShapeId && editor.getShape(sourceShapeId)) {
+    const bounds = editor.getShapePageBounds(sourceShapeId);
+    if (bounds) {
+      nodeX = bounds.x;
+      nodeY = bounds.y + bounds.h + 60;
+    }
+  }
+
+  // Create Prompt node on canvas
+  const nodeId = createSvgImageShape(
+    editor, nodeX, nodeY, 280, 70,
+    createPromptNodeSvg(actionLabel, prompt, model, "queued"),
+    `${actionLabel}-指令节点`
+  );
+
+  // Arrow from source to prompt node
+  if (sourceShapeId) {
+    createAiConnection(editor, sourceShapeId, nodeId, { type: "auto", label: "指令" });
+  }
+
+  // Create generating placeholder card to the right of Prompt node
+  const placeholderX = nodeX + 320;
+  const placeholderY = nodeY - 20;
+  const placeholderId = createSvgImageShape(
+    editor, placeholderX, placeholderY, 320, 220,
+    createGeneratingPlaceholderSvg("queued", model),
+    `${actionLabel}-占位`
+  );
+  createAiConnection(editor, nodeId, placeholderId, { type: "auto", label: "生成" });
+
+  // Create action
+  const action: CanvasAction = {
+    id: actionUid(),
+    sourceId: (sourceShapeId || nodeId) as TLShapeId,
+    targetId: placeholderId,
+    actionType: actionType as ResultType,
+    actionLabel,
+    createdAt: Date.now(),
+    status: "queued",
+    provider: providerId ? "openai-compatible" : "mock",
+    promptNodeId: nodeId,
+    placeholderId,
+    model,
+  };
+  useStudioStore.getState().addAction(action);
+
+  console.log("[executePromptGeneration]", JSON.stringify({
+    actionId: action.id,
+    providerId: providerId || "(mock)",
+    model,
+    actionType,
+    promptNodeId: nodeId,
+    placeholderId,
+    prompt: prompt.slice(0, 60),
+  }));
+
+  const useReal = !!providerId;
+
+  enqueueGenerationTask({
+    provider: useReal ? "openai-compatible" : "mock",
+    providerId: useReal ? providerId : undefined,
+    action,
+    sourceShapeId: nodeId,
+    sourceAssetId: sourceAssetId || ("" as TLAssetId),
+    request: {
+      provider: useReal ? "openai-compatible" : "mock",
+      model,
+      actionType: actionType as ResultType,
+      prompt,
+      size: { width: imgW, height: imgH },
+      count: 1,
+    },
+    onResult: (result) => {
+      if (!editor) return;
+
+      // Delete the placeholder card
+      editor.deleteShape(placeholderId);
+
+      const asset = result.assets?.[0];
+      const dataUrl =
+        asset?.url?.startsWith("data:")
+          ? asset.url
+          : asset?.b64Json
+            ? `data:${asset.mimeType || "image/png"};base64,${asset.b64Json}`
+            : null;
+
+      if (dataUrl && !dataUrl.endsWith("base64,")) {
+        const resultId = createRealImageCard(
+          editor, nodeId, dataUrl, actionLabel,
+          asset.width || imgW, asset.height || imgH
+        );
+        if (resultId) {
+          createAiConnection(editor, nodeId, resultId, { type: "auto", label: "结果" });
+        }
+      } else if (sourceAssetId && String(sourceAssetId).startsWith("asset:")) {
+        createResultCard(
+          editor, nodeId, sourceAssetId,
+          actionType as ResultType, actionLabel, 1
+        );
+      }
+      editor.select(nodeId);
+    },
+    onError: (error) => {
+      if (!editor) return;
+      const errMsg = error.message;
+
+      // Replace placeholder with failed card
+      editor.deleteShape(placeholderId);
+
+      createSvgImageShape(
+        editor, placeholderX, placeholderY, 320, 220,
+        createGeneratingPlaceholderSvg("failed", model, errMsg),
+        `${actionLabel}-失败`
+      );
+      editor.select(nodeId);
+    },
+  });
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────
 
 function actionUid() {
   return `action:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
@@ -212,140 +476,97 @@ function resolveSource(sourceId?: TLShapeId) {
     : getSelectedImage(editor);
 }
 
-/**
- * Common flow: create action record → enqueue to scheduler →
- * scheduler manages status → callback creates result card.
- */
-function enqueueToolAction(
-  sourceShapeId: TLShapeId,
-  sourceAssetId: TLAssetId,
-  actionType: ResultType,
-  actionLabel: string,
-  extraScale = 1
-) {
-  const { editor } = useStudioStore.getState();
-  if (!editor) return;
-
-  const sourceAsset = editor.getAsset(sourceAssetId);
-  const sourceUrl =
-    (sourceAsset?.props as Record<string, unknown>)?.src as string || "";
-  const sourceShape = editor.getShape(sourceShapeId);
-  const sourceW = (sourceShape?.props as Record<string, number> | undefined)?.w ?? 512;
-  const sourceH = (sourceShape?.props as Record<string, number> | undefined)?.h ?? 512;
-
-  const action: CanvasAction = {
-    id: actionUid(),
-    sourceId: sourceShapeId,
-    targetId: "" as TLShapeId,
-    actionType,
-    actionLabel,
-    createdAt: Date.now(),
-    status: "queued",
-    provider: "mock",
-  };
-  useStudioStore.getState().addAction(action);
-
-  const isVideo = actionType === "video";
-
-  enqueueGenerationTask({
-    provider: "mock",
-    action,
-    sourceShapeId,
-    sourceAssetId,
-    request: {
-      provider: "mock",
-      model: "mock-model",
-      actionType,
-      referenceImage: isVideo
-        ? undefined
-        : {
-            assetId: sourceAssetId,
-            url: sourceUrl,
-            width: sourceW,
-            height: sourceH,
-          },
-      size: { width: sourceW * extraScale, height: sourceH * extraScale },
-      count: 1,
-    },
-    onResult: () => {
-      // Provider returned — create the visual result on canvas
-      if (!editor) return;
-
-      if (isVideo) {
-        createVideoResultCard(editor, sourceShapeId);
-      } else {
-        createResultCard(
-          editor,
-          sourceShapeId,
-          sourceAssetId,
-          actionType,
-          actionLabel,
-          extraScale
-        );
-      }
-
-      editor.select(sourceShapeId);
-    },
-    onError: (error) => {
-      console.warn(`[canvas-actions] ${actionLabel} 失败`, error.message);
-    },
-  });
-}
-
 // ─── Public action functions ─────────────────────────────────────────
-// Each function: validate → enqueueToolAction → scheduler handles rest
+// All open the Prompt Composer instead of executing directly.
 
 export function generateSimilar(sourceId?: TLShapeId) {
   const { editor } = useStudioStore.getState();
   if (!editor) return;
   const shape = resolveSource(sourceId);
-  if (!shape) return alert("请先在画布中选择一张图片");
-  if (!shape.props.assetId) return;
-  enqueueToolAction(shape.id, shape.props.assetId, "similar", "相似图");
+  useStudioStore.getState().openPromptComposer({
+    actionType: "similar",
+    actionLabel: "生成相似图",
+    sourceShapeId: shape?.id,
+    sourceAssetId: shape?.props.assetId || undefined,
+    sourceName: shape
+      ? ((shape.props.assetId ? (editor.getAsset(shape.props.assetId)?.props as Record<string, unknown>)?.name : undefined) as string) || "未命名"
+      : "",
+  });
 }
 
 export function generateImg2Img(sourceId?: TLShapeId) {
   const { editor } = useStudioStore.getState();
   if (!editor) return;
   const shape = resolveSource(sourceId);
-  if (!shape) return alert("请先在画布中选择一张图片");
-  if (!shape.props.assetId) return;
-  enqueueToolAction(shape.id, shape.props.assetId, "img2img", "图生图");
+  useStudioStore.getState().openPromptComposer({
+    actionType: "img2img",
+    actionLabel: "参考图生图",
+    sourceShapeId: shape?.id,
+    sourceAssetId: shape?.props.assetId || undefined,
+    sourceName: shape
+      ? ((shape.props.assetId ? (editor.getAsset(shape.props.assetId)?.props as Record<string, unknown>)?.name : undefined) as string) || "未命名"
+      : "",
+  });
 }
 
 export function generateUpscale(sourceId?: TLShapeId) {
   const { editor } = useStudioStore.getState();
   if (!editor) return;
   const shape = resolveSource(sourceId);
-  if (!shape) return alert("请先在画布中选择一张图片");
-  if (!shape.props.assetId) return;
-  enqueueToolAction(shape.id, shape.props.assetId, "upscale", "高清放大", 1.5);
+  useStudioStore.getState().openPromptComposer({
+    actionType: "upscale",
+    actionLabel: "高清放大",
+    sourceShapeId: shape?.id,
+    sourceAssetId: shape?.props.assetId || undefined,
+    sourceName: shape
+      ? ((shape.props.assetId ? (editor.getAsset(shape.props.assetId)?.props as Record<string, unknown>)?.name : undefined) as string) || "未命名"
+      : "",
+  });
 }
 
 export function generateClean(sourceId?: TLShapeId) {
   const { editor } = useStudioStore.getState();
   if (!editor) return;
   const shape = resolveSource(sourceId);
-  if (!shape) return alert("请先在画布中选择一张图片");
-  if (!shape.props.assetId) return;
-  enqueueToolAction(shape.id, shape.props.assetId, "clean", "已洗图");
+  useStudioStore.getState().openPromptComposer({
+    actionType: "clean",
+    actionLabel: "洗图优化",
+    sourceShapeId: shape?.id,
+    sourceAssetId: shape?.props.assetId || undefined,
+    sourceName: shape
+      ? ((shape.props.assetId ? (editor.getAsset(shape.props.assetId)?.props as Record<string, unknown>)?.name : undefined) as string) || "未命名"
+      : "",
+  });
 }
 
 export function generateRemoveBg(sourceId?: TLShapeId) {
   const { editor } = useStudioStore.getState();
   if (!editor) return;
   const shape = resolveSource(sourceId);
-  if (!shape) return alert("请先在画布中选择一张图片");
-  if (!shape.props.assetId) return;
-  enqueueToolAction(shape.id, shape.props.assetId, "removeBg", "去背景");
+  useStudioStore.getState().openPromptComposer({
+    actionType: "removeBg",
+    actionLabel: "去背景",
+    sourceShapeId: shape?.id,
+    sourceAssetId: shape?.props.assetId || undefined,
+    sourceName: shape
+      ? ((shape.props.assetId ? (editor.getAsset(shape.props.assetId)?.props as Record<string, unknown>)?.name : undefined) as string) || "未命名"
+      : "",
+  });
 }
 
 export function generateVideo(sourceId?: TLShapeId) {
   const { editor } = useStudioStore.getState();
   if (!editor) return;
   const shape = resolveSource(sourceId);
-  if (!shape) return alert("请先在画布中选择一张图片");
-  enqueueToolAction(shape.id, shape.props.assetId || ("" as TLAssetId), "video", "视频");
+  useStudioStore.getState().openPromptComposer({
+    actionType: "video",
+    actionLabel: "图生视频",
+    sourceShapeId: shape?.id,
+    sourceAssetId: shape?.props.assetId || undefined,
+    sourceName: shape
+      ? ((shape.props.assetId ? (editor.getAsset(shape.props.assetId)?.props as Record<string, unknown>)?.name : undefined) as string) || "未命名"
+      : "",
+  });
 }
 
 // ─── Run demo — stays direct, no scheduler needed ────────────────────

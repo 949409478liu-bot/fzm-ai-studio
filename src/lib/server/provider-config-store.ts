@@ -166,17 +166,23 @@ export function upsertProviderConfig(config: ProviderConfig): ProviderConfig {
   const configs = loadConfigs();
   const idx = configs.findIndex((c) => c.id === config.id);
 
+  const stored = idx >= 0 ? configs[idx] : null;
+
+  // Preserve apiKey if not provided
+  const resolvedApiKey = config.apiKey || stored?.apiKey;
+
   const merged: ProviderConfig = {
     ...config,
-    status: config.apiKey ? "configured" : "unconfigured",
+    apiKey: resolvedApiKey,
+    status: config.status && config.status !== "unconfigured"
+      ? config.status
+      : resolvedApiKey
+        ? "configured"
+        : "unconfigured",
     errorMessage: undefined,
   };
 
   if (idx >= 0) {
-    // Preserve apiKey if not provided (keep old key)
-    if (!merged.apiKey && configs[idx].apiKey) {
-      merged.apiKey = configs[idx].apiKey;
-    }
     configs[idx] = merged;
   } else {
     configs.push(merged);

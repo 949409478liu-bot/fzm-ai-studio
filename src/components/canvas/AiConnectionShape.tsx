@@ -45,16 +45,14 @@ function getCurvePoints({
   endX: number;
   endY: number;
 }) {
-  const isForward = endX >= startX;
-  const distance = isForward
-    ? Math.max(64, Math.abs(endX - startX) * 0.45)
-    : 36;
-  const levelOffset = Math.abs(endY - startY) < 4 ? 10 : 0;
+  const dx = Math.abs(endX - startX);
+  // Flatter curve: less dramatic bezier, more direct connection
+  const cpOffset = Math.min(dx * 0.3, 120);
 
   return {
     start: { x: startX, y: startY },
-    cp1: { x: startX + distance, y: startY - levelOffset },
-    cp2: { x: endX - distance, y: endY + levelOffset },
+    cp1: { x: startX + cpOffset, y: startY },
+    cp2: { x: endX - cpOffset, y: endY },
     end: { x: endX, y: endY },
   };
 }
@@ -112,29 +110,49 @@ export class AiConnectionShapeUtil extends ShapeUtil<AiConnectionShape> {
     const isActive =
       this.editor.getHoveredShapeId() === shape.id ||
       this.editor.getSelectedShapeIds().includes(shape.id);
+
     const path = getAiConnectionPath(shape.props);
+
+    // Subtle, professional line styling
+    const strokeColor = isActive
+      ? "rgba(165,180,252,0.65)"
+      : "rgba(150,160,180,0.28)";
+    const strokeW = isActive ? 1.5 : 1;
 
     return (
       <SVGContainer style={{ overflow: "visible" }}>
+        {/* Invisible wider hit area */}
         <path
           d={path}
           fill="none"
           stroke="transparent"
-          strokeWidth={14}
+          strokeWidth={12}
           pointerEvents="stroke"
         />
+        {/* Visible subtle line */}
         <path
           d={path}
           fill="none"
-          stroke={
-            isActive ? "rgba(165,180,252,0.9)" : "rgba(129,140,248,0.45)"
-          }
-          strokeWidth={isActive ? 2 : 1.5}
+          stroke={strokeColor}
+          strokeWidth={strokeW}
           strokeLinecap="round"
           vectorEffect="non-scaling-stroke"
           pointerEvents="none"
-          style={{ transition: "stroke 120ms ease, stroke-width 120ms ease" }}
+          style={{
+            transition: "stroke 180ms ease, stroke-width 180ms ease",
+          }}
         />
+        {/* Small arrow at end */}
+        {isActive && (
+          <circle
+            cx={shape.props.endX}
+            cy={shape.props.endY}
+            r={3}
+            fill="rgba(165,180,252,0.5)"
+            pointerEvents="none"
+            style={{ transition: "opacity 180ms ease" }}
+          />
+        )}
       </SVGContainer>
     );
   }

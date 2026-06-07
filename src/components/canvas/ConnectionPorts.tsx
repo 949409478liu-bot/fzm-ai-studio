@@ -235,8 +235,8 @@ export const ConnectionPorts = track(() => {
               endY: draft.current.y,
             })}
             fill="none"
-            stroke="rgba(165,180,252,0.9)"
-            strokeWidth={2}
+            stroke="rgba(165,180,252,0.55)"
+            strokeWidth={1.5}
             strokeDasharray="6 5"
             strokeLinecap="round"
           />

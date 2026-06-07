@@ -13,6 +13,8 @@ import { useStudioStore } from "@/lib/store";
 import type { SelectedShapeInfo } from "@/types";
 import { AiConnectionShapeUtil } from "./AiConnectionShape";
 import { CanvasInteractionOverlay } from "./CanvasInteractionOverlay";
+import { PromptComposerOverlay } from "./PromptComposerOverlay";
+import { StatusSynchronizer } from "./StatusSynchronizer";
 import { getImageFromShape } from "@/lib/shape-helpers";
 import { synchronizeAiConnections } from "@/lib/connection-system";
 import {
@@ -171,6 +173,8 @@ export function TldrawCanvas() {
         <SelectionListener />
         <ConnectionSynchronizer />
         <WorkspacePersistence />
+        <PromptComposerOverlay />
+        <StatusSynchronizer />
       </Tldraw>
     </div>
   );

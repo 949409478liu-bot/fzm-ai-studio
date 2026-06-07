@@ -27,7 +27,12 @@ export function BottomGallery() {
           <Sparkles size={12} className="text-zinc-500" />
           <span className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">结果图库</span>
         </div>
-        <span className="text-[10px] text-zinc-600">
+        <span className="text-[10px] text-zinc-600 flex items-center gap-2">
+          {actions.filter((a) => a.status === "running" || a.status === "queued").length > 0 && (
+            <span className="text-indigo-400/70 animate-pulse">
+              {actions.filter((a) => a.status === "running").length > 0 ? "生成中..." : "排队中..."}
+            </span>
+          )}
           {results.length > 0 ? `${results.length} 个结果` : "生成结果会显示在这里"}
         </span>
       </div>

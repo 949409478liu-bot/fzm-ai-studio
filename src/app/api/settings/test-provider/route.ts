@@ -18,15 +18,35 @@ export async function POST(req: Request) {
     }
 
     // If user did not enter a new apiKey, resolve the real key from
-    // the stored config file. Never use a masked key from the client.
+    // the stored config file.
     const stored = getProviderConfigById(body.id);
     const resolvedApiKey = body.apiKey || stored?.apiKey;
-    const configToTest = { ...body, apiKey: resolvedApiKey };
+
+    // Merge: frontend body takes priority, but fill in apiKey from stored
+    const configToTest: ProviderConfig = {
+      ...stored,
+      ...body,
+      apiKey: resolvedApiKey,
+    };
+
+    // Debug log
+    console.log("[test-provider]", JSON.stringify({
+      id: configToTest.id,
+      type: configToTest.type,
+      model: configToTest.defaultModel,
+      capabilities: configToTest.capabilities,
+      testMode: configToTest.capabilities?.includes("text")
+        ? "text-chat-test"
+        : configToTest.capabilities?.some((c) =>
+            ["text-to-image", "image-to-image", "inpaint", "remove-bg"].includes(c)
+          )
+          ? "image-config-check"
+          : "config-only",
+    }));
 
     const result = await testProviderConnection(configToTest);
 
-    // Persist test status using the original body (which may omit apiKey
-    // to preserve the stored key), not configToTest which has the full key.
+    // Persist test status using the original body
     const updated = upsertProviderConfig({
       ...body,
       status: result.ok ? "ok" : "error",
@@ -34,10 +54,14 @@ export async function POST(req: Request) {
       errorMessage: result.ok ? undefined : result.message,
     });
 
+    // Strip apiKey before sending response — never return the real key
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { apiKey: _key, ...safeProvider } = updated;
+
     return NextResponse.json({
       ok: result.ok,
       message: result.message,
-      provider: updated,
+      provider: safeProvider,
     });
   } catch {
     return NextResponse.json(
