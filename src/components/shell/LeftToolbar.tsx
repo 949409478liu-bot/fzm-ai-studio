@@ -8,6 +8,7 @@ import {
   Maximize2,
   Droplets,
   Paintbrush,
+  Workflow,
   Video,
   FolderOpen,
 } from "lucide-react";
@@ -23,6 +24,7 @@ const tools: { id: ToolType; icon: typeof MousePointer2; label: string; tldrawTo
   { id: "upscale", icon: Maximize2, label: "放大" },
   { id: "clean", icon: Droplets, label: "洗图" },
   { id: "inpaint", icon: Paintbrush, label: "局部", tldrawTool: "draw" },
+  { id: "connection", icon: Workflow, label: "连接", tldrawTool: "select" },
   { id: "video", icon: Video, label: "视频" },
   { id: "assets", icon: FolderOpen, label: "素材" },
 ];

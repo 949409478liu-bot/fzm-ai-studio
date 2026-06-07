@@ -6,6 +6,7 @@ export type ToolType =
   | "upscale"
   | "clean"
   | "inpaint"
+  | "connection"
   | "video"
   | "assets";
 
@@ -29,8 +30,11 @@ export interface CanvasConnection {
   id: TLShapeId;
   sourceId: TLShapeId;
   targetId: TLShapeId;
-  type: ResultType;
-  label: string;
+  sourcePort: "output";
+  targetPort: "input";
+  type: "manual" | "auto";
+  label?: string;
+  createdAt: number;
 }
 
 export interface SelectedShapeInfo {

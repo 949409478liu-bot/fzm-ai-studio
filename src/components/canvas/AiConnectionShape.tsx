@@ -19,8 +19,11 @@ declare module "@tldraw/tlschema" {
     [AI_CONNECTION_TYPE]: {
       sourceId: TLShapeId;
       targetId: TLShapeId;
-      connectionType: string;
+      sourcePort: "output";
+      targetPort: "input";
+      connectionType: "manual" | "auto";
       label: string;
+      createdAt: number;
       startX: number;
       startY: number;
       endX: number;
@@ -31,8 +34,17 @@ declare module "@tldraw/tlschema" {
 
 export type AiConnectionShape = TLShape<typeof AI_CONNECTION_TYPE>;
 
-function getCurve(shape: AiConnectionShape) {
-  const { startX, startY, endX, endY } = shape.props;
+function getCurvePoints({
+  startX,
+  startY,
+  endX,
+  endY,
+}: {
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+}) {
   const isForward = endX >= startX;
   const distance = isForward
     ? Math.max(64, Math.abs(endX - startX) * 0.45)
@@ -47,8 +59,10 @@ function getCurve(shape: AiConnectionShape) {
   };
 }
 
-function getCurvePath(shape: AiConnectionShape) {
-  const { start, cp1, cp2, end } = getCurve(shape);
+export function getAiConnectionPath(
+  points: Parameters<typeof getCurvePoints>[0]
+) {
+  const { start, cp1, cp2, end } = getCurvePoints(points);
   return `M ${start.x} ${start.y} C ${cp1.x} ${cp1.y}, ${cp2.x} ${cp2.y}, ${end.x} ${end.y}`;
 }
 
@@ -57,8 +71,11 @@ export class AiConnectionShapeUtil extends ShapeUtil<AiConnectionShape> {
   static override props: RecordProps<AiConnectionShape> = {
     sourceId: shapeIdValidator,
     targetId: shapeIdValidator,
-    connectionType: T.string,
+    sourcePort: T.literal("output"),
+    targetPort: T.literal("input"),
+    connectionType: T.literalEnum("manual", "auto"),
     label: T.string,
+    createdAt: T.number,
     startX: T.number,
     startY: T.number,
     endX: T.number,
@@ -69,8 +86,11 @@ export class AiConnectionShapeUtil extends ShapeUtil<AiConnectionShape> {
     return {
       sourceId: "shape:source" as TLShapeId,
       targetId: "shape:target" as TLShapeId,
-      connectionType: "similar",
+      sourcePort: "output",
+      targetPort: "input",
+      connectionType: "auto",
       label: "",
+      createdAt: 0,
       startX: 0,
       startY: 0,
       endX: 120,
@@ -79,7 +99,7 @@ export class AiConnectionShapeUtil extends ShapeUtil<AiConnectionShape> {
   }
 
   override getGeometry(shape: AiConnectionShape) {
-    const { start, cp1, cp2, end } = getCurve(shape);
+    const { start, cp1, cp2, end } = getCurvePoints(shape.props);
     return new CubicBezier2d({
       start: new Vec(start.x, start.y),
       cp1: new Vec(cp1.x, cp1.y),
@@ -92,7 +112,7 @@ export class AiConnectionShapeUtil extends ShapeUtil<AiConnectionShape> {
     const isActive =
       this.editor.getHoveredShapeId() === shape.id ||
       this.editor.getSelectedShapeIds().includes(shape.id);
-    const path = getCurvePath(shape);
+    const path = getAiConnectionPath(shape.props);
 
     return (
       <SVGContainer style={{ overflow: "visible" }}>
@@ -120,7 +140,7 @@ export class AiConnectionShapeUtil extends ShapeUtil<AiConnectionShape> {
   }
 
   override getIndicatorPath(shape: AiConnectionShape) {
-    return new Path2D(getCurvePath(shape));
+    return new Path2D(getAiConnectionPath(shape.props));
   }
 
   override canResize() {

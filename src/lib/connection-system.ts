@@ -4,7 +4,7 @@ import {
   type AiConnectionShape,
 } from "@/components/canvas/AiConnectionShape";
 import { useStudioStore, uid } from "./store";
-import type { ResultType } from "@/types";
+import type { CanvasConnection } from "@/types";
 
 function getConnectionPoints(
   editor: Editor,
@@ -27,13 +27,25 @@ export function createAiConnection(
   editor: Editor,
   sourceId: TLShapeId,
   targetId: TLShapeId,
-  type: ResultType,
-  label: string
+  options: {
+    type: CanvasConnection["type"];
+    label?: string;
+  }
 ) {
+  if (sourceId === targetId) return null;
+
+  const state = useStudioStore.getState();
+  const duplicate = state.connections.find(
+    (connection) =>
+      connection.sourceId === sourceId && connection.targetId === targetId
+  );
+  if (duplicate) return duplicate.id;
+
   const points = getConnectionPoints(editor, sourceId, targetId);
   if (!points) return null;
 
   const id = uid();
+  const createdAt = Date.now();
   editor.createShape<AiConnectionShape>({
     id,
     type: AI_CONNECTION_TYPE,
@@ -42,21 +54,39 @@ export function createAiConnection(
     props: {
       sourceId,
       targetId,
-      connectionType: type,
-      label,
+      sourcePort: "output",
+      targetPort: "input",
+      connectionType: options.type,
+      label: options.label ?? "",
+      createdAt,
       ...points,
     },
   });
   editor.sendToBack([id]);
-  useStudioStore.getState().addConnection({
+  state.addConnection({
     id,
     sourceId,
     targetId,
-    type,
-    label,
+    sourcePort: "output",
+    targetPort: "input",
+    type: options.type,
+    label: options.label,
+    createdAt,
   });
 
   return id;
+}
+
+export function hasAiConnection(
+  sourceId: TLShapeId,
+  targetId: TLShapeId
+) {
+  return useStudioStore
+    .getState()
+    .connections.some(
+      (connection) =>
+        connection.sourceId === sourceId && connection.targetId === targetId
+    );
 }
 
 export function synchronizeAiConnections(editor: Editor) {

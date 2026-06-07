@@ -164,7 +164,10 @@ function createResultCard(
   const parentId = editor.getShape(imgId)?.parentId;
   const groupId = isShapeId(parentId) ? parentId : imgId;
 
-  createAiConnection(editor, sourceId, imgId, _resultType, label);
+  createAiConnection(editor, sourceId, imgId, {
+    type: "auto",
+    label,
+  });
 
   useStudioStore.getState().addResult({
     id: imgId,
@@ -254,7 +257,10 @@ export function generateVideo() {
   const parentId = editor.getShape(videoId)?.parentId;
   const groupId = isShapeId(parentId) ? parentId : videoId;
 
-  createAiConnection(editor, shape.id, videoId, "video", "视频");
+  createAiConnection(editor, shape.id, videoId, {
+    type: "auto",
+    label: "视频",
+  });
 
   useStudioStore.getState().addResult({
     id: videoId,
@@ -301,7 +307,10 @@ export function runDemo(editor: Editor) {
   );
   editor.groupShapes([label2Id, simId]);
 
-  createAiConnection(editor, sourceId, simId, "similar", "相似图");
+  createAiConnection(editor, sourceId, simId, {
+    type: "auto",
+    label: "相似图",
+  });
 
   // ── Video card ──
   const vidX = simX;
@@ -318,8 +327,14 @@ export function runDemo(editor: Editor) {
   );
   editor.groupShapes([label3Id, vidId]);
 
-  createAiConnection(editor, sourceId, vidId, "video", "视频");
-  createAiConnection(editor, simId, vidId, "video", "相似图转视频");
+  createAiConnection(editor, sourceId, vidId, {
+    type: "auto",
+    label: "视频",
+  });
+  createAiConnection(editor, simId, vidId, {
+    type: "auto",
+    label: "相似图转视频",
+  });
 
   const store = useStudioStore.getState();
   store.addResult({ id: simId, imageUrl: "", type: "similar", typeLabel: "相似图", shapeId: simId });
