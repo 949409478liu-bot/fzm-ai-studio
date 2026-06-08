@@ -115,7 +115,7 @@ export const PromptComposerOverlay = track(() => {
       await executePromptGeneration({
         prompt: prompt.trim(),
         providerId: hasRealProviders ? providerId : "",
-        model: effectiveModel || "gpt-image-2",
+        model: effectiveModel || "",
         size: `${ASPECT_RATIOS[aspect].w}x${ASPECT_RATIOS[aspect].h}`,
         quality,
         actionType,

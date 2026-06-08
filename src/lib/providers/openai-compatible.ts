@@ -239,7 +239,7 @@ export async function generateOpenAiCompatibleImage(
 ): Promise<ImageGenerationResponse> {
   const { baseUrl, apiKey, defaultModel } = config;
   const normalizedBase = normalizeBaseUrl(baseUrl || "");
-  const model = request.model || defaultModel || "gpt-image-2";
+  const model = request.model || defaultModel || "";
 
   const startedAt = performance.now();
 
@@ -292,7 +292,7 @@ export async function generateOpenAiCompatibleImage(
     } catch { /* use default */ }
     if (detail.includes("无可用渠道") || detail.includes("no available")) {
       throw new Error(
-        `模型无可用渠道，请检查模型名是否为 gpt-image-2，并确认当前 Key 分组已开通该模型。`
+        `模型无可用渠道。当前 Provider: ${config.name}, 模型: ${model}。请检查模型名是否正确，并确认当前 Key 分组已开通该模型。`
       );
     }
     throw new Error(`服务器返回错误 (${response.status}): ${detail}`);
@@ -366,7 +366,7 @@ export async function generateOpenAiCompatibleImageEdit(
 ): Promise<ImageGenerationResponse> {
   const { baseUrl, apiKey } = config;
   const normalizedBase = normalizeBaseUrl(baseUrl || "");
-  const model = params.model || config.defaultModel || "gpt-image-2";
+  const model = params.model || config.defaultModel || "";
   const startedAt = performance.now();
 
   const formData = new FormData();

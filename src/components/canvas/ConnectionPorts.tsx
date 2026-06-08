@@ -10,6 +10,7 @@ import {
   type TLAssetId,
 } from "@tldraw/tldraw";
 import { useStudioStore } from "@/lib/store";
+import { resolveImageReference } from "@/lib/shape-helpers";
 import {
   createAiConnection,
   hasAiConnection,
@@ -348,24 +349,16 @@ export const ConnectionPorts = track(() => {
             { icon: Video, label: "图生视频", at: "video" },
           ].map(({ icon: Icon, label, at }) => (
             <DragMenuItem key={at} icon={Icon} label={label} onClick={() => {
-              const shape = editor.getShape(portMenu.sourceId);
-              const aId = (shape?.type === "image" ? shape.props.assetId : undefined) as TLAssetId | undefined;
-              const name = aId
-                ? ((editor.getAsset(aId)?.props as Record<string, unknown>)?.name as string) || ""
-                : "";
-              const srcUrl = aId
-                ? ((editor.getAsset(aId)?.props as Record<string, unknown>)?.src as string) || ""
-                : "";
-              const sp = (shape?.props as Record<string, number> | undefined);
+              const ref = resolveImageReference(editor, portMenu.sourceId);
               useStudioStore.getState().openBottomPromptBar({
                 actionType: at as "img2img" | "similar" | "clean" | "removeBg" | "video",
                 actionLabel: label,
-                sourceShapeId: portMenu.sourceId,
-                sourceAssetId: aId as TLAssetId | undefined,
-                sourceName: name,
-                sourceWidth: Math.round((sp?.w ?? 0)),
-                sourceHeight: Math.round((sp?.h ?? 0)),
-                sourceUrl: srcUrl,
+                sourceShapeId: ref?.sourceShapeId ?? portMenu.sourceId,
+                sourceAssetId: ref?.sourceAssetId as TLAssetId | undefined,
+                sourceName: ref?.sourceName ?? "",
+                sourceWidth: ref?.sourceWidth ?? 0,
+                sourceHeight: ref?.sourceHeight ?? 0,
+                sourceUrl: ref?.sourceUrl ?? "",
               });
               setPortMenu(null);
             }} />

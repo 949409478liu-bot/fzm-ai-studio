@@ -7,7 +7,7 @@ import type {
 import { isShapeId } from "@tldraw/tldraw";
 import { useStudioStore, uid, assetUid } from "./store";
 import { createAiConnection } from "./connection-system";
-import { getImageFromShape, getSelectedImage } from "./shape-helpers";
+import { resolveImageReference } from "./shape-helpers";
 import type { CanvasAction, ResultType } from "@/types";
 import { enqueueGenerationTask } from "./api-scheduler";
 
@@ -63,7 +63,8 @@ function createSvgImageShape(
   w: number,
   h: number,
   svg: string,
-  name: string
+  name: string,
+  role: "label" | "operation-node" | "placeholder" | "container" = "label"
 ): TLShapeId {
   const assetId = assetUid();
   const shapeId = uid();
@@ -91,6 +92,7 @@ function createSvgImageShape(
     x,
     y,
     props: { assetId, w, h },
+    meta: { role },
   });
 
   return shapeId;
@@ -219,10 +221,10 @@ function createResultCard(
   // Label
   const labelId = createSvgImageShape(
     editor, cardX, cardY - 34, 120, 28,
-    createLabelSvg(label), `${label}-标签`
+    createLabelSvg(label), `${label}-标签`, "label"
   );
 
-  // Result image — reference the same assetId
+  // Result image — reference the same assetId, mark as content
   const imgId = uid();
   editor.createShape({
     id: imgId,
@@ -230,6 +232,7 @@ function createResultCard(
     x: cardX,
     y: cardY,
     props: { assetId: sourceAssetId, w: cardW, h: cardH },
+    meta: { role: "content-image", isGenerated: true },
   });
 
   editor.groupShapes([labelId, imgId]);
@@ -280,7 +283,7 @@ function createRealImageCard(
       typeName: "asset",
       type: "image",
       props: {
-        name: label,
+        name: `${label}结果`,
         src: dataUrl,
         w: cardW,
         h: cardH,
@@ -291,19 +294,20 @@ function createRealImageCard(
     } satisfies TLImageAsset,
   ]);
 
-  // Label
+  // Label (distinct role)
   const labelId = createSvgImageShape(
     editor, cardX, cardY - 34, 120, 28,
-    createLabelSvg(label), `${label}-标签`
+    createLabelSvg(label), `${label}-标签`, "label"
   );
 
-  // Image shape with NEW asset
+  // Image shape with NEW asset, marked as content
   editor.createShape({
     id: imgId,
     type: "image",
     x: cardX,
     y: cardY,
     props: { assetId, w: cardW, h: cardH },
+    meta: { role: "content-image", isGenerated: true },
   });
 
   editor.groupShapes([labelId, imgId]);
@@ -395,7 +399,8 @@ export async function executePromptGeneration(params: {
   const nodeId = createSvgImageShape(
     editor, nodeX, nodeY, 280, 70,
     createPromptNodeSvg(actionLabel, prompt, model, "queued"),
-    `${actionLabel}-指令节点`
+    `${actionLabel}-指令节点`,
+    "operation-node"
   );
 
   // Arrow from source to prompt node
@@ -409,7 +414,8 @@ export async function executePromptGeneration(params: {
   const placeholderId = createSvgImageShape(
     editor, placeholderX, placeholderY, 320, 220,
     createGeneratingPlaceholderSvg("queued", model),
-    `${actionLabel}-占位`
+    `${actionLabel}-占位`,
+    "placeholder"
   );
   createAiConnection(editor, nodeId, placeholderId, { type: "auto", label: "生成" });
 
@@ -495,7 +501,8 @@ export async function executePromptGeneration(params: {
       createSvgImageShape(
         editor, placeholderX, placeholderY, 320, 220,
         createGeneratingPlaceholderSvg("failed", model, errMsg),
-        `${actionLabel}-失败`
+        `${actionLabel}-失败`,
+        "placeholder"
       );
       editor.select(nodeId);
     },
@@ -508,14 +515,6 @@ function actionUid() {
   return `action:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function resolveSource(sourceId?: TLShapeId) {
-  const { editor } = useStudioStore.getState();
-  if (!editor) return null;
-  return sourceId
-    ? getImageFromShape(editor, sourceId)
-    : getSelectedImage(editor);
-}
-
 // ─── Public action functions ─────────────────────────────────────────
 // All open the Prompt Composer instead of executing directly.
 
@@ -525,27 +524,19 @@ function openGenUI(
   sourceId?: TLShapeId
 ) {
   const { editor } = useStudioStore.getState();
-  const shape = sourceId ? resolveSource(sourceId) : null;
-  const aId = shape?.props.assetId;
-  const name = aId
-    ? ((editor?.getAsset(aId)?.props as Record<string, unknown>)?.name as string) || "未命名"
-    : "";
-  const srcUrl = aId
-    ? ((editor?.getAsset(aId)?.props as Record<string, unknown>)?.src as string) || ""
-    : "";
-  const w = shape?.props.w ?? 0;
-  const h = shape?.props.h ?? 0;
+  if (!editor) return;
 
-  // Open bottom bar as the single primary UI
+  const ref = sourceId ? resolveImageReference(editor, sourceId) : null;
+
   useStudioStore.getState().openBottomPromptBar({
     actionType,
     actionLabel,
-    sourceShapeId: shape?.id ?? undefined,
-    sourceAssetId: aId ?? undefined,
-    sourceName: name,
-    sourceWidth: Math.round(w),
-    sourceHeight: Math.round(h),
-    sourceUrl: srcUrl,
+    sourceShapeId: ref?.sourceShapeId ?? undefined,
+    sourceAssetId: (ref?.sourceAssetId as TLAssetId | undefined) ?? undefined,
+    sourceName: ref?.sourceName ?? "",
+    sourceWidth: ref?.sourceWidth ?? 0,
+    sourceHeight: ref?.sourceHeight ?? 0,
+    sourceUrl: ref?.sourceUrl ?? "",
   });
 }
 

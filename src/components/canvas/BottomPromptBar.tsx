@@ -85,7 +85,7 @@ export const BottomPromptBar = track(() => {
   const selectedProvider = hasRealProviders
     ? providers.find((p) => p.id === providerId) || matchingProviders[0]
     : null;
-  const effectiveModel = model || selectedProvider?.defaultModel || "gpt-image-2";
+  const effectiveModel = model || selectedProvider?.defaultModel || "";
 
   const handleSubmit = async () => {
     if (!prompt.trim()) return;
@@ -99,6 +99,27 @@ export const BottomPromptBar = track(() => {
     if (hasRealProviders && !providerId && !matchingProviders.some((p) => p.id === providerId)) {
       setProviderId(matchingProviders[0]?.id || "");
     }
+
+    // Guard: reject label/placeholder names
+    const labelKeywords = ["标签", "Prompt", "placeholder", "指令", "占位", "失败"];
+    for (const kw of labelKeywords) {
+      if (bar.sourceName.includes(kw)) {
+        alert(`当前选中的是${kw}节点，不是真实图片。请选择图片节点。`);
+        return;
+      }
+    }
+
+    console.log("[BottomPromptBar submit reference]", {
+      actionType,
+      sourceShapeId: bar.sourceShapeId,
+      sourceAssetId: bar.sourceAssetId,
+      sourceName: bar.sourceName,
+      sourceWidth: bar.sourceWidth,
+      sourceHeight: bar.sourceHeight,
+      hasSourceUrl: !!bar.sourceUrl,
+      route: route.endpoint,
+    });
+
     setSubmitting(true);
     try {
       await executePromptGeneration({
@@ -217,7 +238,8 @@ export const BottomPromptBar = track(() => {
               onChange={(e) => {
                 setProviderId(e.target.value);
                 const p = providers.find((x) => x.id === e.target.value);
-                if (p?.defaultModel) setModel(p.defaultModel);
+                // Only auto-fill model if user hasn't manually typed one
+                if (p?.defaultModel && !model) setModel(p.defaultModel);
               }}
             >
               {matchingProviders.map((p) => (

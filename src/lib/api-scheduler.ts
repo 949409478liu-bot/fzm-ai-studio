@@ -113,7 +113,7 @@ async function executeTask(item: QueueItem): Promise<void> {
 
       const editFormData = new FormData();
       editFormData.append("providerId", task.providerId!);
-      editFormData.append("model", task.request.model || "gpt-image-2");
+      editFormData.append("model", task.request.model || "");
       editFormData.append("prompt", task.request.prompt || "");
       editFormData.append("size", `${task.request.size.width}x${task.request.size.height}`);
       editFormData.append("quality", "auto");
