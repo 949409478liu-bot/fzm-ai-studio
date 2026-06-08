@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getProviderConfigById } from "@/lib/server/provider-config-store";
 import { generateOpenAiCompatibleImageEdit } from "@/lib/providers/openai-compatible";
+import { generateGeminiNativeImageEdit } from "@/lib/providers/gemini-native";
 
 export async function POST(req: Request) {
   try {
@@ -26,38 +27,51 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Provider 未配置或未启用" }, { status: 400 });
     }
 
+    // Resolve model endpointMode
+    const modelCfg = config.models?.find((m) => m.name === model);
+    const endpointMode = modelCfg?.endpointMode || "openai-images";
+
     const startedAt = Date.now();
-    console.log("[api/providers/edit] 开始编辑", JSON.stringify({
-      providerId,
-      type: config.type,
-      model,
-      endpoint: `${config.baseUrl}/images/edits`,
-      imageSize: imageFile.size,
-      startTime: new Date().toISOString(),
-    }));
 
     try {
-      const result = await generateOpenAiCompatibleImageEdit(
-        config,
-        imageFile,
-        {
-          model,
-          prompt: prompt || "Enhance this image",
-          size: size || "auto",
-          quality: quality || "auto",
-          count: countStr ? parseInt(countStr) : 1,
-        }
-      );
+      if (endpointMode === "gemini-native") {
+        console.log("[api/providers/edit] Gemini Native", JSON.stringify({
+          providerId, model, endpointMode,
+          endpoint: `${config.baseUrl}/../v1beta/models/${model}:generateContent`,
+          imageSize: imageFile.size,
+        }));
 
-      console.log("[api/providers/edit] 编辑完成", JSON.stringify({
-        elapsedMs: Date.now() - startedAt,
-        assetsCount: result.assets.length,
+        // Gemini uses JSON body, not multipart. Convert file inline.
+        const result = await generateGeminiNativeImageEdit(config, imageFile, {
+          model, prompt: prompt || "", size: size || "1:1",
+        });
+
+        console.log("[api/providers/edit] Gemini 完成", JSON.stringify({
+          elapsedMs: Date.now() - startedAt, assetsCount: result.assets.length,
+        }));
+        return NextResponse.json(result);
+      }
+
+      // openai-images (default): multipart /images/edits
+      console.log("[api/providers/edit] OpenAI Images", JSON.stringify({
+        providerId, model, endpointMode,
+        endpoint: `${config.baseUrl}/images/edits`,
+        imageSize: imageFile.size,
       }));
 
+      const result = await generateOpenAiCompatibleImageEdit(config, imageFile, {
+        model, prompt: prompt || "Enhance this image",
+        size: size || "auto", quality: quality || "auto",
+        count: countStr ? parseInt(countStr) : 1,
+      });
+
+      console.log("[api/providers/edit] 完成", JSON.stringify({
+        elapsedMs: Date.now() - startedAt, assetsCount: result.assets.length,
+      }));
       return NextResponse.json(result);
     } catch (genErr) {
-      console.error("[api/providers/edit] 编辑失败", JSON.stringify({
-        elapsedMs: Date.now() - startedAt,
+      console.error("[api/providers/edit] 失败", JSON.stringify({
+        providerId, model, endpointMode, elapsedMs: Date.now() - startedAt,
         error: genErr instanceof Error ? genErr.message : String(genErr),
       }));
       throw genErr;

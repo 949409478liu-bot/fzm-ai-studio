@@ -39,6 +39,14 @@ export type ProviderStatus =
   | "ok"
   | "error";
 
+export interface ProviderModelConfig {
+  name: string;
+  label?: string;
+  capabilities: ProviderCapability[];
+  endpointMode?: "openai-images" | "openai-chat" | "gemini-native" | "custom";
+  defaultQuality?: "low" | "medium" | "high" | "auto";
+}
+
 export interface ProviderConfig {
   id: string;
   name: string;
@@ -47,6 +55,7 @@ export interface ProviderConfig {
   apiKey?: string;
   defaultModel?: string;
   capabilities: ProviderCapability[];
+  models?: ProviderModelConfig[];
   enabled: boolean;
   status: ProviderStatus;
   lastTestAt?: string;
@@ -62,6 +71,7 @@ export interface ProviderConfigForClient {
   apiKeyMasked?: string;
   defaultModel?: string;
   capabilities: ProviderCapability[];
+  models?: ProviderModelConfig[];
   enabled: boolean;
   status: ProviderStatus;
   lastTestAt?: string;

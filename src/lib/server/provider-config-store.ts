@@ -9,6 +9,17 @@ import type {
   ProviderConfigForClient,
 } from "@/lib/providers/types";
 import { testOpenAiCompatibleConnection } from "@/lib/providers/openai-compatible";
+import type { ProviderModelConfig } from "@/lib/providers/types";
+
+const DEFAULT_OPENAI_MODELS: ProviderModelConfig[] = [
+  { name: "gpt-image-2", label: "GPT-Image-2", capabilities: ["text-to-image", "image-to-image", "inpaint"], endpointMode: "openai-images" },
+  { name: "gpt-4o", label: "GPT-4o", capabilities: ["text"], endpointMode: "openai-chat" },
+];
+
+const DEFAULT_GEMINI_MODELS: ProviderModelConfig[] = [
+  { name: "gpt-image-2", label: "GPT-Image-2", capabilities: ["text-to-image", "image-to-image", "inpaint"], endpointMode: "openai-images" },
+  { name: "gemini-3-pro-image-preview", label: "Gemini 3 Pro Image Preview", capabilities: ["text-to-image", "image-to-image"], endpointMode: "gemini-native" },
+];
 
 const DATA_DIR = path.resolve(process.cwd(), "data");
 const CONFIG_PATH = path.join(DATA_DIR, "provider-configs.json");
@@ -22,6 +33,7 @@ const DEFAULT_PROVIDERS: ProviderConfig[] = [
     type: "openai",
     baseUrl: "https://api.openai.com/v1",
     capabilities: ["text", "text-to-image", "image-to-image"],
+    models: DEFAULT_OPENAI_MODELS,
     enabled: false,
     status: "unconfigured",
   },
@@ -30,6 +42,7 @@ const DEFAULT_PROVIDERS: ProviderConfig[] = [
     name: "Gemini / Nano Banana",
     type: "gemini",
     capabilities: ["text", "text-to-image", "image-to-image"],
+    models: DEFAULT_GEMINI_MODELS,
     enabled: false,
     status: "unconfigured",
   },
@@ -136,6 +149,7 @@ function toClientConfig(c: ProviderConfig): ProviderConfigForClient {
     apiKeyMasked: maskApiKey(c.apiKey),
     defaultModel: c.defaultModel,
     capabilities: c.capabilities,
+    models: c.models,
     enabled: c.enabled,
     status: c.status,
     lastTestAt: c.lastTestAt,

@@ -95,6 +95,29 @@ export const BottomPromptBar = track(() => {
       alert("请先引用一张图片。点击画布中的图片后再操作。");
       return;
     }
+    // Guard: endpointMode incompatible with edit actions
+    const allowedEditModes = ["openai-images", "gemini-native"];
+    if (editActions.includes(actionType) && selectedProvider?.models && effectiveModel) {
+      const modelCfg = selectedProvider.models.find((m) => m.name === effectiveModel);
+      if (modelCfg && modelCfg.endpointMode && !allowedEditModes.includes(modelCfg.endpointMode)) {
+        alert(
+          `当前模型「${effectiveModel}」使用 ${modelCfg.endpointMode} 协议，不支持图片编辑动作。\n` +
+          `请切换到支持图片编辑的模型。`
+        );
+        return;
+      }
+    }
+    // Guard: model capability mismatch
+    if (selectedProvider?.models && effectiveModel) {
+      const modelCfg = selectedProvider.models.find((m) => m.name === effectiveModel);
+      if (modelCfg && !(modelCfg.capabilities as ProviderCapability[]).includes(cap)) {
+        const ok = confirm(
+          `当前模型「${effectiveModel}」未声明支持「${bar.actionLabel}」，\n` +
+          `可能需要切换到支持 ${cap} 的模型。\n\n是否继续？`
+        );
+        if (!ok) return;
+      }
+    }
     // Guard: real providers available but none selected
     if (hasRealProviders && !providerId && !matchingProviders.some((p) => p.id === providerId)) {
       setProviderId(matchingProviders[0]?.id || "");
@@ -251,13 +274,54 @@ export const BottomPromptBar = track(() => {
           )}
         </div>
 
-        {/* Model */}
-        <input
-          className="bg-white/[0.02] border border-white/[0.05] rounded-lg text-[11px] text-zinc-300 outline-none px-2.5 py-1.5 w-36"
-          value={effectiveModel}
-          onChange={(e) => setModel(e.target.value)}
-          placeholder="模型名"
-        />
+        {/* Model: dropdown if provider has models config, otherwise input */}
+        {selectedProvider?.models && selectedProvider.models.length > 0 ? (
+          <select
+            className="bg-white/[0.02] border border-white/[0.05] rounded-lg text-[11px] text-zinc-300 outline-none cursor-pointer px-2.5 py-1.5 w-40"
+            value={effectiveModel}
+            onChange={(e) => setModel(e.target.value)}
+          >
+            {(() => {
+              const editActions = ["img2img", "clean", "removeBg"];
+              const isEdit = editActions.includes(actionType);
+              return selectedProvider.models
+                .filter((m) => {
+                  const hasCap = (m.capabilities as ProviderCapability[]).includes(cap);
+                  if (!hasCap) return false;
+                  // For edit actions, only show openai-images or gemini-native models
+                  const allowedEditModes = ["openai-images", "gemini-native"];
+                  if (isEdit && m.endpointMode && !allowedEditModes.includes(m.endpointMode)) return false;
+                  return true;
+                })
+                .map((m) => (
+                  <option key={m.name} value={m.name}>
+                    {m.label || m.name}
+                  </option>
+                ));
+            })()}
+          </select>
+        ) : (
+          <input
+            className="bg-white/[0.02] border border-white/[0.05] rounded-lg text-[11px] text-zinc-300 outline-none px-2.5 py-1.5 w-36"
+            value={effectiveModel}
+            onChange={(e) => setModel(e.target.value)}
+            placeholder="模型名"
+          />
+        )}
+        {/* Model capability warning */}
+        {selectedProvider?.models && effectiveModel && !providerLoading && (
+          (() => {
+            const modelCfg = selectedProvider.models.find((m) => m.name === effectiveModel);
+            if (modelCfg && !(modelCfg.capabilities as ProviderCapability[]).includes(cap)) {
+              return (
+                <span className="text-[10px] text-amber-400/80">
+                  当前模型未声明支持「{bar.actionLabel}」，可能失败
+                </span>
+              );
+            }
+            return null;
+          })()
+        )}
 
         {/* Aspect ratio */}
         <div className="flex items-center gap-0.5 bg-white/[0.02] border border-white/[0.05] rounded-lg px-1.5 py-1">
