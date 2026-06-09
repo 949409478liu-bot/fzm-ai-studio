@@ -17,7 +17,50 @@ const ASPECT_RATIOS = [
 ] as const;
 
 const QUALITIES = ["low", "medium", "high"] as const;
+const QUALITY_LABELS: Record<string, string> = {
+  low: "low",
+  medium: "medium",
+  high: "high",
+} as const;
+const GPTSAPI_QUALITY_LABELS: Record<string, string> = {
+  low: "1K",
+  medium: "2K",
+  high: "4K",
+} as const;
 const COUNTS = [1, 2, 4] as const;
+
+// ─── Provider matching helpers ─────────────────────────────────────────
+
+const EDIT_ACTIONS = ["img2img", "clean", "removeBg"] as const;
+const ALLOWED_EDIT_ENDPOINT_MODES = ["openai-images", "gemini-native"];
+
+function endpointModeAllowedForAction(
+  endpointMode: string | undefined,
+  actionType: string
+): boolean {
+  if ((EDIT_ACTIONS as readonly string[]).includes(actionType)) {
+    return !endpointMode || ALLOWED_EDIT_ENDPOINT_MODES.includes(endpointMode);
+  }
+  return true; // text-to-image and video allow all endpointModes
+}
+
+function providerSupportsCapability(
+  p: { enabled: boolean; capabilities: string[]; models?: Array<{ capabilities: string[]; endpointMode?: string }> },
+  cap: ProviderCapability,
+  actionType: string
+): boolean {
+  if (!p.enabled) return false;
+  // If provider has models, check model-level capabilities + endpointMode
+  if (p.models && p.models.length > 0) {
+    return p.models.some(
+      (m) =>
+        (m.capabilities as string[]).includes(cap) &&
+        endpointModeAllowedForAction(m.endpointMode, actionType)
+    );
+  }
+  // Fallback to provider-level capabilities
+  return (p.capabilities as string[]).includes(cap);
+}
 
 type BarAction = {
   type: ResultType | "text-to-image";
@@ -75,17 +118,42 @@ export const BottomPromptBar = track(() => {
 
   const availableActions = hasSource ? IMAGE_ACTIONS : NO_IMAGE_ACTIONS;
 
-  // Filter providers only after loading completes
+  // Filter providers by capability (model-level preferred, provider-level fallback)
   const matchingProviders = !providerLoading
-    ? providers.filter(
-        (p) => p.enabled && (p.capabilities as ProviderCapability[]).includes(cap)
-      )
+    ? providers.filter((p) => providerSupportsCapability(p, cap, actionType))
     : [];
+
   const hasRealProviders = !providerLoading && matchingProviders.length > 0;
-  const selectedProvider = hasRealProviders
-    ? providers.find((p) => p.id === providerId) || matchingProviders[0]
-    : null;
-  const effectiveModel = model || selectedProvider?.defaultModel || "";
+
+  // selectedProvider: only pick from matchingProviders, never lock to a source-only provider
+  const selectedProvider = (() => {
+    if (!hasRealProviders) return null;
+    // If current providerId is still valid for this action, keep it
+    const currentInMatching = matchingProviders.find((p) => p.id === providerId);
+    if (currentInMatching) return currentInMatching;
+    // Otherwise auto-switch to first matching provider
+    return matchingProviders[0];
+  })();
+
+  // effectiveModel: pick first model that supports the required capability + endpointMode
+  const effectiveModel = (() => {
+    if (model) {
+      // User explicitly chose a model — verify it still matches
+      const mCfg = selectedProvider?.models?.find((m) => m.name === model);
+      if (mCfg && (mCfg.capabilities as string[]).includes(cap) && endpointModeAllowedForAction(mCfg.endpointMode, actionType)) {
+        return model;
+      }
+      // User's chosen model no longer matches — fall through to auto-pick
+    }
+    // Auto-pick the first compatible model
+    const compatible = selectedProvider?.models?.find(
+      (m) => (m.capabilities as string[]).includes(cap) && endpointModeAllowedForAction(m.endpointMode, actionType)
+    );
+    return compatible?.name || "";
+  })();
+  const effectiveModelCfg = selectedProvider?.models?.find((m) => m.name === effectiveModel);
+  const isGptsApiV3 = effectiveModelCfg?.endpointMode === "gptsapi-v3-image";
+  const qualityLabels = isGptsApiV3 ? GPTSAPI_QUALITY_LABELS : QUALITY_LABELS;
 
   const handleSubmit = async () => {
     if (!prompt.trim()) return;
@@ -95,32 +163,10 @@ export const BottomPromptBar = track(() => {
       alert("请先引用一张图片。点击画布中的图片后再操作。");
       return;
     }
-    // Guard: endpointMode incompatible with edit actions
-    const allowedEditModes = ["openai-images", "gemini-native"];
-    if (editActions.includes(actionType) && selectedProvider?.models && effectiveModel) {
-      const modelCfg = selectedProvider.models.find((m) => m.name === effectiveModel);
-      if (modelCfg && modelCfg.endpointMode && !allowedEditModes.includes(modelCfg.endpointMode)) {
-        alert(
-          `当前模型「${effectiveModel}」使用 ${modelCfg.endpointMode} 协议，不支持图片编辑动作。\n` +
-          `请切换到支持图片编辑的模型。`
-        );
-        return;
-      }
-    }
-    // Guard: model capability mismatch
-    if (selectedProvider?.models && effectiveModel) {
-      const modelCfg = selectedProvider.models.find((m) => m.name === effectiveModel);
-      if (modelCfg && !(modelCfg.capabilities as ProviderCapability[]).includes(cap)) {
-        const ok = confirm(
-          `当前模型「${effectiveModel}」未声明支持「${bar.actionLabel}」，\n` +
-          `可能需要切换到支持 ${cap} 的模型。\n\n是否继续？`
-        );
-        if (!ok) return;
-      }
-    }
-    // Guard: real providers available but none selected
-    if (hasRealProviders && !providerId && !matchingProviders.some((p) => p.id === providerId)) {
-      setProviderId(matchingProviders[0]?.id || "");
+    // Guard: no compatible provider+model selected
+    if (hasRealProviders && !selectedProvider) {
+      alert(`当前没有支持「${bar.actionLabel}」的 Provider。请先在 API 配置中心配置。`);
+      return;
     }
 
     // Guard: reject label/placeholder names
@@ -147,7 +193,7 @@ export const BottomPromptBar = track(() => {
     try {
       await executePromptGeneration({
         prompt: prompt.trim(),
-        providerId: hasRealProviders ? (providerId || matchingProviders[0]?.id || "") : "",
+        providerId: hasRealProviders ? (selectedProvider?.id || "") : "",
         model: effectiveModel,
         size: `${ASPECT_RATIOS[aspect].w}x${ASPECT_RATIOS[aspect].h}`,
         quality,
@@ -257,12 +303,18 @@ export const BottomPromptBar = track(() => {
           ) : hasRealProviders ? (
             <select
               className="bg-transparent text-[11px] text-zinc-300 outline-none cursor-pointer"
-              value={providerId}
+              value={selectedProvider?.id || ""}
               onChange={(e) => {
-                setProviderId(e.target.value);
-                const p = providers.find((x) => x.id === e.target.value);
-                // Only auto-fill model if user hasn't manually typed one
-                if (p?.defaultModel && !model) setModel(p.defaultModel);
+                const newId = e.target.value;
+                setProviderId(newId);
+                // Auto-pick first compatible model for the new provider
+                const p = providers.find((x) => x.id === newId);
+                const firstModel = p?.models?.find(
+                  (m) =>
+                    (m.capabilities as string[]).includes(cap) &&
+                    endpointModeAllowedForAction(m.endpointMode, actionType)
+                );
+                setModel(firstModel?.name || "");
               }}
             >
               {matchingProviders.map((p) => (
@@ -282,17 +334,11 @@ export const BottomPromptBar = track(() => {
             onChange={(e) => setModel(e.target.value)}
           >
             {(() => {
-              const editActions = ["img2img", "clean", "removeBg"];
-              const isEdit = editActions.includes(actionType);
               return selectedProvider.models
-                .filter((m) => {
-                  const hasCap = (m.capabilities as ProviderCapability[]).includes(cap);
-                  if (!hasCap) return false;
-                  // For edit actions, only show openai-images or gemini-native models
-                  const allowedEditModes = ["openai-images", "gemini-native"];
-                  if (isEdit && m.endpointMode && !allowedEditModes.includes(m.endpointMode)) return false;
-                  return true;
-                })
+                .filter((m) =>
+                  (m.capabilities as string[]).includes(cap) &&
+                  endpointModeAllowedForAction(m.endpointMode, actionType)
+                )
                 .map((m) => (
                   <option key={m.name} value={m.name}>
                     {m.label || m.name}
@@ -338,7 +384,7 @@ export const BottomPromptBar = track(() => {
           ))}
         </div>
 
-        {/* Quality */}
+        {/* Quality / Resolution */}
         <div className="flex items-center gap-0.5 bg-white/[0.02] border border-white/[0.05] rounded-lg px-1.5 py-1">
           {QUALITIES.map((q) => (
             <button
@@ -348,7 +394,7 @@ export const BottomPromptBar = track(() => {
                 quality === q ? "bg-indigo-500/15 text-indigo-300" : "text-zinc-500 hover:text-zinc-300"
               }`}
             >
-              {q}
+              {qualityLabels[q]}
             </button>
           ))}
         </div>

@@ -34,6 +34,12 @@ export async function POST(req: Request) {
     const startedAt = Date.now();
 
     try {
+      if (endpointMode === "gptsapi-v3-image") {
+        return NextResponse.json({
+          error: "当前 GPTsAPI v3 图生图接口文档未配置，请先补充 image-to-image endpoint。",
+        }, { status: 400 });
+      }
+
       if (endpointMode === "gemini-native") {
         console.log("[api/providers/edit] Gemini Native", JSON.stringify({
           providerId, model, endpointMode,

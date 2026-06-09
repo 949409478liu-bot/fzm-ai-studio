@@ -456,6 +456,7 @@ export async function executePromptGeneration(params: {
     request: {
       provider: useReal ? "openai-compatible" : "mock",
       model,
+      quality: params.quality,
       actionType: actionType as ResultType,
       prompt,
       size: { width: imgW, height: imgH },

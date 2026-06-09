@@ -10,28 +10,14 @@ import {
   Check,
   Globe,
   Key,
+  Box,
 } from "lucide-react";
 import type {
   ProviderConfigForClient,
   ProviderType,
-  ProviderCapability,
   ProviderStatus,
 } from "@/lib/providers/types";
-import {
-  PROVIDER_TYPE_LABELS,
-  CAPABILITY_LABELS,
-} from "@/lib/providers/types";
-
-const ALL_CAPABILITIES: ProviderCapability[] = [
-  "text",
-  "text-to-image",
-  "image-to-image",
-  "upscale",
-  "inpaint",
-  "remove-bg",
-  "image-to-video",
-  "text-to-video",
-];
+import { PROVIDER_TYPE_LABELS } from "@/lib/providers/types";
 
 const STATUS_ICONS: Record<ProviderStatus, string> = {
   unconfigured: "○",
@@ -46,6 +32,17 @@ const STATUS_COLORS: Record<ProviderStatus, string> = {
   error: "text-red-400",
 };
 
+const CAPABILITY_TAGS: Record<string, string> = {
+  "text-to-image": "文生图",
+  "image-to-image": "图生图",
+  "inpaint": "局部重绘",
+  "remove-bg": "去背景",
+  "text": "文本",
+  "upscale": "放大",
+  "image-to-video": "图生视频",
+  "text-to-video": "文生视频",
+};
+
 export function ApiSettingsDialog() {
   const isOpen = useStudioStore((s) => s.isApiSettingsOpen);
   const setOpen = useStudioStore((s) => s.setApiSettingsOpen);
@@ -56,14 +53,13 @@ export function ApiSettingsDialog() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
 
-  // Form state for the selected provider
+  // Form state — only user-facing fields, no engineering fields
   const [form, setForm] = useState({
     name: "",
     type: "openai-compatible" as ProviderType,
     baseUrl: "",
     apiKey: "",
     defaultModel: "",
-    capabilities: [] as ProviderCapability[],
     enabled: true,
   });
 
@@ -78,7 +74,7 @@ export function ApiSettingsDialog() {
         if (res.ok && !cancelled) {
           const data = await res.json();
           setProviders(data.providers || []);
-        useStudioStore.getState().setProviders(data.providers || []);
+          useStudioStore.getState().setProviders(data.providers || []);
         }
       } catch {
         // ignore
@@ -116,7 +112,6 @@ export function ApiSettingsDialog() {
         baseUrl: p.baseUrl || "",
         apiKey: "",
         defaultModel: p.defaultModel || "",
-        capabilities: p.capabilities,
         enabled: p.enabled,
       });
     }
@@ -131,7 +126,6 @@ export function ApiSettingsDialog() {
       baseUrl: "",
       apiKey: "",
       defaultModel: "",
-      capabilities: [],
       enabled: true,
     });
   };
@@ -153,7 +147,6 @@ export function ApiSettingsDialog() {
           baseUrl: form.baseUrl.trim() || undefined,
           apiKey: form.apiKey.trim() || undefined,
           defaultModel: form.defaultModel.trim() || undefined,
-          capabilities: form.capabilities,
           enabled: form.enabled,
         }),
       });
@@ -184,7 +177,6 @@ export function ApiSettingsDialog() {
           baseUrl: form.baseUrl.trim() || undefined,
           apiKey: form.apiKey.trim() || undefined,
           defaultModel: form.defaultModel.trim() || undefined,
-          capabilities: form.capabilities,
           enabled: form.enabled,
         }),
       });
@@ -214,16 +206,8 @@ export function ApiSettingsDialog() {
     }
   };
 
-  const toggleCapability = (cap: ProviderCapability) => {
-    setForm((f) => ({
-      ...f,
-      capabilities: f.capabilities.includes(cap)
-        ? f.capabilities.filter((c) => c !== cap)
-        : [...f.capabilities, cap],
-    }));
-  };
-
   const selected = providers.find((p) => p.id === selectedId);
+  const presetModels = selected?.models || [];
 
   return (
     <Dialog open={isOpen} onOpenChange={setOpen}>
@@ -238,7 +222,7 @@ export function ApiSettingsDialog() {
               API 配置中心
             </h2>
             <p className="text-[11px] text-zinc-500">
-              管理多平台 Provider，密钥仅存储在本地文件
+              管理多平台 Provider · 模型能力由系统自动识别
             </p>
           </div>
         </div>
@@ -391,12 +375,17 @@ export function ApiSettingsDialog() {
                   </label>
                   <input
                     className="s-input text-[12px]"
-                    placeholder="例如: gpt-image-2 / gemini-2.0-flash / flux-dev"
+                    placeholder="例如: gpt-image-2"
                     value={form.defaultModel}
                     onChange={(e) =>
                       setForm((f) => ({ ...f, defaultModel: e.target.value }))
                     }
                   />
+                  {presetModels.length > 0 && (
+                    <p className="text-[10px] text-zinc-600 mt-1">
+                      可选模型见下方列表
+                    </p>
+                  )}
                 </div>
 
                 {/* Enabled toggle */}
@@ -418,27 +407,38 @@ export function ApiSettingsDialog() {
                   </button>
                 </div>
 
-                {/* Capabilities */}
-                <div>
-                  <label className="text-[10px] font-medium text-zinc-600 uppercase tracking-widest mb-1.5 block">
-                    支持能力
-                  </label>
-                  <div className="flex flex-wrap gap-1">
-                    {ALL_CAPABILITIES.map((cap) => (
-                      <button
-                        key={cap}
-                        onClick={() => toggleCapability(cap)}
-                        className={`rounded px-2 py-0.5 text-[10px] transition-colors ${
-                          form.capabilities.includes(cap)
-                            ? "bg-indigo-500/15 text-indigo-300 ring-1 ring-indigo-500/25"
-                            : "bg-white/[0.02] text-zinc-600 hover:bg-white/[0.04]"
-                        }`}
-                      >
-                        {CAPABILITY_LABELS[cap]}
-                      </button>
-                    ))}
+                {/* Preset models (read-only display) */}
+                {presetModels.length > 0 && (
+                  <div>
+                    <label className="text-[10px] font-medium text-zinc-600 uppercase tracking-widest mb-1.5 block flex items-center gap-1.5">
+                      <Box size={10} />
+                      系统识别模型
+                      <span className="normal-case tracking-normal text-zinc-500 ml-1">
+                        (能力由系统自动配置)
+                      </span>
+                    </label>
+                    <div className="space-y-1">
+                      {presetModels.map((m) => (
+                        <div
+                          key={m.name}
+                          className="flex items-center gap-2 rounded-md bg-white/[0.02] border border-white/[0.04] px-2.5 py-1.5"
+                        >
+                          <span className="text-[11px] text-zinc-300 flex-1">
+                            {m.label || m.name}
+                          </span>
+                          {m.capabilities.map((cap) => (
+                            <span
+                              key={cap}
+                              className="rounded bg-indigo-500/8 text-[9px] text-indigo-300/70 px-1.5 py-0.5"
+                            >
+                              {CAPABILITY_TAGS[cap] || cap}
+                            </span>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* Action buttons */}
                 <div className="flex items-center justify-between pt-3 border-t border-white/[0.04]">

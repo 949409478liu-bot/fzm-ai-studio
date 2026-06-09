@@ -43,7 +43,9 @@ export interface ProviderModelConfig {
   name: string;
   label?: string;
   capabilities: ProviderCapability[];
-  endpointMode?: "openai-images" | "openai-chat" | "gemini-native" | "custom";
+  endpointMode?: "openai-images" | "openai-chat" | "gemini-native" | "gptsapi-v3-image" | "custom";
+  /** GPTsAPI v3: provider segment in API path, e.g. "openai" or "google" */
+  providerPath?: string;
   defaultQuality?: "low" | "medium" | "high" | "auto";
 }
 
@@ -108,6 +110,7 @@ export interface ImageGenerationRequest {
   provider: ProviderName;
   model?: string;
   prompt?: string;
+  quality?: string;
   referenceImage?: {
     assetId: string;
     url: string;

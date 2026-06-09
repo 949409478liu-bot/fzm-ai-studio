@@ -1,6 +1,9 @@
 /**
  * Server-side provider config store.
  * Reads/writes data/provider-configs.json — never exposed to the browser.
+ *
+ * V0.5.5.11: Model capabilities are auto-injected from model-presets.
+ * The config file only stores user settings (name, type, baseUrl, apiKey, enabled).
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -9,22 +12,15 @@ import type {
   ProviderConfigForClient,
 } from "@/lib/providers/types";
 import { testOpenAiCompatibleConnection } from "@/lib/providers/openai-compatible";
-import type { ProviderModelConfig } from "@/lib/providers/types";
-
-const DEFAULT_OPENAI_MODELS: ProviderModelConfig[] = [
-  { name: "gpt-image-2", label: "GPT-Image-2", capabilities: ["text-to-image", "image-to-image", "inpaint"], endpointMode: "openai-images" },
-  { name: "gpt-4o", label: "GPT-4o", capabilities: ["text"], endpointMode: "openai-chat" },
-];
-
-const DEFAULT_GEMINI_MODELS: ProviderModelConfig[] = [
-  { name: "gpt-image-2", label: "GPT-Image-2", capabilities: ["text-to-image", "image-to-image", "inpaint"], endpointMode: "openai-images" },
-  { name: "gemini-3-pro-image-preview", label: "Gemini 3 Pro Image Preview", capabilities: ["text-to-image", "image-to-image"], endpointMode: "gemini-native" },
-];
+import {
+  findMatchingPresets,
+  presetsToModelConfigs,
+} from "@/lib/providers/model-presets";
 
 const DATA_DIR = path.resolve(process.cwd(), "data");
 const CONFIG_PATH = path.join(DATA_DIR, "provider-configs.json");
 
-// ─── Default built-in providers (unconfigured) ───────────────────────
+// ─── Default built-in providers (unconfigured, no models — presets inject models) ──
 
 const DEFAULT_PROVIDERS: ProviderConfig[] = [
   {
@@ -33,7 +29,6 @@ const DEFAULT_PROVIDERS: ProviderConfig[] = [
     type: "openai",
     baseUrl: "https://api.openai.com/v1",
     capabilities: ["text", "text-to-image", "image-to-image"],
-    models: DEFAULT_OPENAI_MODELS,
     enabled: false,
     status: "unconfigured",
   },
@@ -42,7 +37,6 @@ const DEFAULT_PROVIDERS: ProviderConfig[] = [
     name: "Gemini / Nano Banana",
     type: "gemini",
     capabilities: ["text", "text-to-image", "image-to-image"],
-    models: DEFAULT_GEMINI_MODELS,
     enabled: false,
     status: "unconfigured",
   },
@@ -51,12 +45,8 @@ const DEFAULT_PROVIDERS: ProviderConfig[] = [
     name: "fal.ai",
     type: "fal",
     capabilities: [
-      "text-to-image",
-      "image-to-image",
-      "upscale",
-      "inpaint",
-      "remove-bg",
-      "image-to-video",
+      "text-to-image", "image-to-image", "upscale",
+      "inpaint", "remove-bg", "image-to-video",
     ],
     enabled: false,
     status: "unconfigured",
@@ -67,11 +57,8 @@ const DEFAULT_PROVIDERS: ProviderConfig[] = [
     type: "comfyui",
     baseUrl: "http://127.0.0.1:8188",
     capabilities: [
-      "text-to-image",
-      "image-to-image",
-      "upscale",
-      "inpaint",
-      "remove-bg",
+      "text-to-image", "image-to-image", "upscale",
+      "inpaint", "remove-bg",
     ],
     enabled: false,
     status: "unconfigured",
@@ -89,10 +76,8 @@ const DEFAULT_PROVIDERS: ProviderConfig[] = [
     name: "Replicate",
     type: "replicate",
     capabilities: [
-      "text-to-image",
-      "image-to-image",
-      "image-to-video",
-      "text-to-video",
+      "text-to-image", "image-to-image",
+      "image-to-video", "text-to-video",
     ],
     enabled: false,
     status: "unconfigured",
@@ -107,31 +92,61 @@ function ensureDataDir() {
   }
 }
 
+/** Load raw configs from disk, merge with defaults, then inject preset models. */
 function loadConfigs(): ProviderConfig[] {
   ensureDataDir();
-  if (!fs.existsSync(CONFIG_PATH)) {
-    return DEFAULT_PROVIDERS;
-  }
-  try {
-    const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
-    const saved = JSON.parse(raw) as ProviderConfig[];
-    // Merge with defaults: keep built-in ids, add any custom ones from saved
-    const savedIds = new Set(saved.map((c) => c.id));
-    const merged = [...saved];
-    for (const def of DEFAULT_PROVIDERS) {
-      if (!savedIds.has(def.id)) {
-        merged.push(def);
-      }
+
+  let saved: ProviderConfig[] = [];
+  if (fs.existsSync(CONFIG_PATH)) {
+    try {
+      const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
+      saved = JSON.parse(raw) as ProviderConfig[];
+    } catch {
+      // corrupt file, fall through to defaults
     }
-    return merged;
-  } catch {
-    return DEFAULT_PROVIDERS;
   }
+
+  // Merge saved into defaults
+  const savedIds = new Set(saved.map((c) => c.id));
+  const merged = [...saved];
+  for (const def of DEFAULT_PROVIDERS) {
+    if (!savedIds.has(def.id)) {
+      merged.push(def);
+    }
+  }
+
+  // ── Enrich with model presets ───────────────────────────────────
+  for (const config of merged) {
+    const presets = findMatchingPresets(config);
+    if (presets.length > 0) {
+      config.models = presetsToModelConfigs(presets, config.models);
+      // Merge provider-level capabilities from models
+      const caps = new Set(config.capabilities || []);
+      for (const m of config.models) {
+        for (const c of m.capabilities) {
+          caps.add(c);
+        }
+      }
+      config.capabilities = [...caps] as ProviderConfig["capabilities"];
+    }
+  }
+
+  return merged;
+}
+
+/** Strip models before writing — they come from presets, not user config. */
+function stripModels(configs: ProviderConfig[]): ProviderConfig[] {
+  return configs.map((c) => {
+    const cleaned = { ...c };
+    delete (cleaned as Record<string, unknown>).models;
+    return cleaned as ProviderConfig;
+  });
 }
 
 function saveConfigs(configs: ProviderConfig[]) {
   ensureDataDir();
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(configs, null, 2), "utf-8");
+  const stripped = stripModels(configs);
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(stripped, null, 2), "utf-8");
 }
 
 function maskApiKey(key?: string): string | undefined {
@@ -169,7 +184,6 @@ export function getProviderConfigForRuntime(
   return loadConfigs().find((c) => c.id === providerId && c.enabled) ?? null;
 }
 
-/** Read full config by id regardless of enabled state (for test/save ops). */
 export function getProviderConfigById(
   providerId: string
 ): ProviderConfig | null {
@@ -231,7 +245,12 @@ export async function testProviderConnection(
     switch (type) {
       case "openai":
       case "openai-compatible": {
-        return testOpenAiCompatibleConnection(config);
+        // Enrich config with preset models before testing
+        const presets = findMatchingPresets(config);
+        const enriched = presets.length > 0
+          ? { ...config, models: presetsToModelConfigs(presets, config.models) }
+          : config;
+        return testOpenAiCompatibleConnection(enriched);
       }
 
       case "gemini": {
@@ -248,7 +267,6 @@ export async function testProviderConnection(
           headers: { Authorization: `Key ${apiKey}` },
           signal: AbortSignal.timeout(8000),
         });
-        // fal often returns non-200 for root path even with valid key
         if (res.status < 500) return { ok: true, message: `${name} 连接测试通过` };
         return { ok: false, message: `fal.ai 返回 ${res.status}` };
       }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getProviderConfigById } from "@/lib/server/provider-config-store";
 import { generateOpenAiCompatibleImage } from "@/lib/providers/openai-compatible";
 import { generateGeminiNativeImage } from "@/lib/providers/gemini-native";
+import { generateGptsApiV3TextToImage } from "@/lib/providers/gptsapi-v3";
 import type { ImageGenerationRequest } from "@/lib/providers/types";
 
 export async function POST(req: Request) {
@@ -25,9 +26,34 @@ export async function POST(req: Request) {
     const modelCfg = config.models?.find((m) => m.name === modelName);
     const endpointMode = modelCfg?.endpointMode || "openai-images";
 
+    // ─── Diagnostic: trace full routing decision ───────────────────────
+    console.log("[api/providers/run] 路由诊断", JSON.stringify({
+      providerId: body.providerId,
+      providerName: config.name,
+      providerType: config.type,
+      baseUrl: config.baseUrl,
+      model: modelName,
+      modelEndpointMode: modelCfg?.endpointMode ?? "(none)",
+      resolvedEndpointMode: endpointMode,
+      hasModels: Array.isArray(config.models),
+      modelCount: config.models?.length ?? 0,
+    }, null, 2));
+
     const startedAt = Date.now();
 
     try {
+      if (endpointMode === "gptsapi-v3-image") {
+        console.log("[api/providers/run] GPTsAPI v3 Image — 委托 generateGptsApiV3TextToImage", JSON.stringify({
+          providerId: body.providerId, model: modelName, endpointMode,
+          baseUrl: config.baseUrl,
+        }));
+        const result = await generateGptsApiV3TextToImage(config, body.request);
+        console.log("[api/providers/run] GPTsAPI v3 完成", JSON.stringify({
+          elapsedMs: Date.now() - startedAt, assetsCount: result.assets.length,
+        }));
+        return NextResponse.json(result);
+      }
+
       if (endpointMode === "gemini-native") {
         console.log("[api/providers/run] Gemini Native", JSON.stringify({
           providerId: body.providerId, model: modelName,
