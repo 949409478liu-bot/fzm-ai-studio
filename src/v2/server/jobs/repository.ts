@@ -3,13 +3,13 @@ import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 import { getDb } from "@/v2/server/db/connection";
 
-export interface JobRecord { id: string; generationId: string; projectId: string; nodeId: string | null; executionToken: string; providerId: string; modelId: string; remoteTaskId: string | null; status: string; phase: string; progress: number | null; attempt: number; nextRetryAt: string | null; deadlineAt: string | null; ticket: Record<string, unknown>; stagedOutputAssetIds: string[]; error: string | null; createdAt: string; updatedAt: string; finishedAt: string | null; }
+export interface JobRecord { id: string; generationId: string; projectId: string; nodeId: string | null; executionToken: string; providerId: string; modelId: string; remoteTaskId: string | null; status: string; phase: string; progress: number | null; attempt: number; nextRetryAt: string | null; deadlineAt: string | null; ticket: Record<string, unknown>; stagedOutputAssetIds: string[]; error: string | null; errorCode: string | null; httpStatus: number | null; createdAt: string; updatedAt: string; finishedAt: string | null; }
 
 function parseJson<T>(value: string, fallback: T): T { try { return JSON.parse(value) as T; } catch { return fallback; } }
 function now() { return new Date().toISOString(); }
 
 export function mapJob(row: Record<string, unknown>): JobRecord {
-  return { id: String(row.id), generationId: String(row.generation_id), projectId: String(row.project_id), nodeId: row.node_id ? String(row.node_id) : null, executionToken: String(row.execution_token), providerId: String(row.provider_id), modelId: String(row.model_id), remoteTaskId: row.remote_task_id ? String(row.remote_task_id) : null, status: String(row.status), phase: String(row.phase), progress: row.progress == null ? null : Number(row.progress), attempt: Number(row.attempt), nextRetryAt: row.next_retry_at ? String(row.next_retry_at) : null, deadlineAt: row.deadline_at ? String(row.deadline_at) : null, ticket: parseJson(String(row.ticket_json), {}), stagedOutputAssetIds: parseJson(String(row.staged_output_asset_ids_json ?? "[]"), []), error: row.error ? String(row.error) : null, createdAt: String(row.created_at), updatedAt: String(row.updated_at), finishedAt: row.finished_at ? String(row.finished_at) : null };
+  return { id: String(row.id), generationId: String(row.generation_id), projectId: String(row.project_id), nodeId: row.node_id ? String(row.node_id) : null, executionToken: String(row.execution_token), providerId: String(row.provider_id), modelId: String(row.model_id), remoteTaskId: row.remote_task_id ? String(row.remote_task_id) : null, status: String(row.status), phase: String(row.phase), progress: row.progress == null ? null : Number(row.progress), attempt: Number(row.attempt), nextRetryAt: row.next_retry_at ? String(row.next_retry_at) : null, deadlineAt: row.deadline_at ? String(row.deadline_at) : null, ticket: parseJson(String(row.ticket_json), {}), stagedOutputAssetIds: parseJson(String(row.staged_output_asset_ids_json ?? "[]"), []), error: row.error ? String(row.error) : null, errorCode: row.error_code ? String(row.error_code) : null, httpStatus: row.http_status == null ? null : Number(row.http_status), createdAt: String(row.created_at), updatedAt: String(row.updated_at), finishedAt: row.finished_at ? String(row.finished_at) : null };
 }
 
 export function getJob(id: string, db = getDb()) {
@@ -36,7 +36,7 @@ export function listJobs(projectId: string, options: { status?: string | null; l
   return { jobs: rows, nextCursor: rows.length === Math.min(Math.max(options.limit || 50, 1), 100) && last ? Buffer.from(`${last.createdAt}|${last.id}`).toString("base64url") : null };
 }
 
-export function insertJob(input: Omit<JobRecord, "id" | "remoteTaskId" | "status" | "phase" | "progress" | "attempt" | "nextRetryAt" | "ticket" | "stagedOutputAssetIds" | "error" | "createdAt" | "updatedAt" | "finishedAt">, db: Database.Database) {
+export function insertJob(input: Omit<JobRecord, "id" | "remoteTaskId" | "status" | "phase" | "progress" | "attempt" | "nextRetryAt" | "ticket" | "stagedOutputAssetIds" | "error" | "errorCode" | "httpStatus" | "createdAt" | "updatedAt" | "finishedAt">, db: Database.Database) {
   const id = randomUUID();
   const timestamp = now();
   db.prepare(`INSERT INTO jobs (id, generation_id, project_id, node_id, execution_token, provider_id, model_id, status, phase, deadline_at, ticket_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', 'queued', ?, '{}', ?, ?)`).run(id, input.generationId, input.projectId, input.nodeId, input.executionToken, input.providerId, input.modelId, input.deadlineAt, timestamp, timestamp);
@@ -59,12 +59,12 @@ export function claimNextJob(db = getDb()) {
   return transaction();
 }
 
-export function updateJob(id: string, patch: Partial<Pick<JobRecord, "status" | "phase" | "progress" | "attempt" | "nextRetryAt" | "remoteTaskId" | "ticket" | "stagedOutputAssetIds" | "error">>, db = getDb()) {
+export function updateJob(id: string, patch: Partial<Pick<JobRecord, "status" | "phase" | "progress" | "attempt" | "nextRetryAt" | "remoteTaskId" | "ticket" | "stagedOutputAssetIds" | "error" | "errorCode" | "httpStatus">>, db = getDb()) {
   const current = getJob(id, db);
   if (!current) return null;
   const next = { ...current, ...patch };
   const finished = ["succeeded", "failed", "canceled", "interrupted"].includes(next.status) ? now() : current.finishedAt;
-  db.prepare(`UPDATE jobs SET remote_task_id = ?, status = ?, phase = ?, progress = ?, attempt = ?, next_retry_at = ?, ticket_json = ?, staged_output_asset_ids_json = ?, error = ?, updated_at = ?, finished_at = ? WHERE id = ?`).run(next.remoteTaskId, next.status, next.phase, next.progress, next.attempt, next.nextRetryAt, JSON.stringify(next.ticket), JSON.stringify(next.stagedOutputAssetIds), next.error, now(), finished, id);
+  db.prepare(`UPDATE jobs SET remote_task_id = ?, status = ?, phase = ?, progress = ?, attempt = ?, next_retry_at = ?, ticket_json = ?, staged_output_asset_ids_json = ?, error = ?, error_code = ?, http_status = ?, updated_at = ?, finished_at = ? WHERE id = ?`).run(next.remoteTaskId, next.status, next.phase, next.progress, next.attempt, next.nextRetryAt, JSON.stringify(next.ticket), JSON.stringify(next.stagedOutputAssetIds), next.error, next.errorCode, next.httpStatus, now(), finished, id);
   return getJob(id, db);
 }
 

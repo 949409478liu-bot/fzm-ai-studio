@@ -66,7 +66,7 @@ async function addImageAndGenerate(page: Page, prompt: string, providerId?: stri
   await page.getByRole("menu").getByRole("button", { name: "Image" }).click();
   if (providerId) await page.getByLabel("Provider").selectOption(providerId);
   await page.getByRole("textbox", { name: "Prompt" }).fill(prompt);
-  await page.getByRole("button", { name: /生成/ }).click();
+  await page.getByRole("button", { name: "生成", exact: true }).click();
 }
 
 test("V2 durable project canvas and asset interactions", async ({ page }) => {
@@ -170,9 +170,10 @@ test("Phase 4 PromptBar generates image result with fake provider", async ({ pag
   await page.getByRole("menu").getByRole("button", { name: "Image" }).click();
   await expect(page.getByLabel("Generation prompt")).toBeVisible();
   await page.getByRole("textbox", { name: "Prompt" }).fill("a calm studio product render");
+  await page.getByLabel("Provider").selectOption("fake-phase4");
   await expect(page.getByLabel("Provider")).toHaveValue("fake-phase4");
   await expect(page.getByLabel("Model")).toHaveValue("fake-image");
-  await page.getByRole("button", { name: /生成/ }).click();
+  await page.getByRole("button", { name: "生成", exact: true }).click();
   await expect(page.locator(".react-flow__node img.fzm-node-image")).toBeVisible({ timeout: 15_000 });
   const projectId = await projectIdFromUrl(page);
   await expect.poll(async () => JSON.stringify((await fetchCanvas(page, projectId)).nodes)).toContain("generationId");
@@ -185,9 +186,10 @@ test("Phase 4 Best-of-N keeps one node and persists selected variant", async ({ 
   await seedFakeProvider(page, "fake-best-of-n");
   await page.getByLabel("Add").click();
   await page.getByRole("menu").getByRole("button", { name: "Image" }).click();
+  await page.getByLabel("Provider").selectOption("fake-best-of-n");
   await page.getByRole("textbox", { name: "Prompt" }).fill("four product options");
   await page.getByLabel("Count").getByRole("button", { name: "4" }).click();
-  await page.getByRole("button", { name: /生成/ }).click();
+  await page.getByRole("button", { name: "生成", exact: true }).click();
   await expect(page.locator(".react-flow__node img.fzm-node-image")).toBeVisible({ timeout: 15_000 });
   await expect(page.locator(".react-flow__node")).toHaveCount(1);
   await expect(page.locator(".fzm-variant-filmstrip button")).toHaveCount(4);
@@ -234,7 +236,7 @@ test("RC01/RC10 failed generation keeps draft and restores settings", async ({ p
   await createProject(page);
   await seedFakeProvider(page, "fake-rc-fail", { fail: true });
   await addImageAndGenerate(page, "failure keeps my prompt", "fake-rc-fail");
-  await expect(page.getByText(/生成失败/)).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator(".fzm-promptbar__status").getByText(/生成失败/)).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("textbox", { name: "Prompt" })).toHaveValue("failure keeps my prompt");
   const projectId = await projectIdFromUrl(page);
   await expect.poll(async () => {
@@ -250,7 +252,7 @@ test("RC02 interrupted generation shows ambiguous submit UX", async ({ page }) =
   await createProject(page);
   await seedFakeProvider(page, "fake-rc-interrupt", { interrupt: true });
   await addImageAndGenerate(page, "ambiguous paid submit", "fake-rc-interrupt");
-  await expect(page.getByText(/避免重复扣费|任务中断/)).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator(".fzm-promptbar__status").getByText(/避免重复扣费|任务中断/)).toBeVisible({ timeout: 15_000 });
   await expect(page.locator(".react-flow__node img.fzm-node-image")).toHaveCount(0);
   const projectId = await projectIdFromUrl(page);
   await expect.poll(async () => {
@@ -267,7 +269,7 @@ test("RC03 cancel async generation rejects late result", async ({ page }) => {
   await expect.poll(async () => (await fakeStats(page))["fake-rc-cancel:submit"] ?? 0).toBe(1);
   await expect(page.getByRole("button", { name: /Cancel/ })).toBeVisible();
   await page.getByRole("button", { name: /Cancel/ }).click();
-  await expect(page.getByText(/已取消/)).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator(".fzm-promptbar__status").getByText(/已取消/)).toBeVisible({ timeout: 15_000 });
   await page.waitForTimeout(1000);
   await expect(page.locator(".react-flow__node img.fzm-node-image")).toHaveCount(0);
   expect((await fakeStats(page))["fake-rc-cancel:submit"]).toBe(1);
@@ -292,7 +294,7 @@ test("RC11 double click uses one paid submit", async ({ page }) => {
   await page.getByRole("menu").getByRole("button", { name: "Image" }).click();
   await page.getByLabel("Provider").selectOption("fake-rc-double");
   await page.getByRole("textbox", { name: "Prompt" }).fill("double click guard");
-  await Promise.allSettled([page.getByRole("button", { name: /生成/ }).click(), page.getByRole("button", { name: /生成/ }).click()]);
+  await Promise.allSettled([page.getByRole("button", { name: "生成", exact: true }).click(), page.getByRole("button", { name: "生成", exact: true }).click()]);
   await expect(page.locator(".react-flow__node img.fzm-node-image")).toBeVisible({ timeout: 15_000 });
   const projectId = await projectIdFromUrl(page);
   const counts = await page.evaluate(async (id) => {
@@ -329,9 +331,9 @@ test("V2 project navigation and rename persist", async ({ page }) => {
   await expect(page.getByLabel("FZM AI Studio projects")).toBeVisible();
   page.once("dialog", async (dialog) => { await dialog.accept("Renamed Phase 2.1"); });
   await page.getByRole("button", { name: /Rename/ }).first().click();
-  await expect(page.getByText("Renamed Phase 2.1")).toBeVisible();
+  await expect(page.getByText("Renamed Phase 2.1").first()).toBeVisible();
   await page.reload();
-  await expect(page.getByText("Renamed Phase 2.1")).toBeVisible();
+  await expect(page.getByText("Renamed Phase 2.1").first()).toBeVisible();
   await page.goto(projectUrl);
   await expect(page.getByLabel("FZM AI Studio 2.0 canvas")).toBeVisible();
   await page.goBack();

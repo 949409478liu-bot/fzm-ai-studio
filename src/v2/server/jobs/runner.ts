@@ -1,7 +1,8 @@
 import "server-only";
 import { getDb } from "@/v2/server/db/connection";
 import { getProviderRegistry } from "@/v2/server/providers/registry";
-import { ProviderAmbiguousSubmitError, ProviderBusyError, ProviderPollError, ProviderRateLimitError, redactProviderError } from "@/v2/server/providers/errors";
+import { ProviderAmbiguousSubmitError, ProviderBusyError, ProviderPollError, ProviderRateLimitError } from "@/v2/server/providers/errors";
+import { extractProviderDiagnostic } from "@/v2/server/providers/diagnostic";
 import { getGeneration, setGenerationStatus } from "@/v2/server/generations/repository";
 import { resolveGenerationReferences } from "@/v2/server/generations/service";
 import { ingestGeneratedOutput } from "@/v2/server/assets/ingestGenerated";
@@ -20,9 +21,9 @@ export async function runJob(job: JobRecord) {
     return;
   }
   const registry = getProviderRegistry();
-  const { provider, adapter, model } = await registry.validatePaidRequest({ providerId: job.providerId, modelId: job.modelId, action: generation.action as "image.generate" | "image.edit", referenceCount: generation.references.length });
-  const context = registry.context(provider);
   try {
+    const { provider, adapter, model } = await registry.validatePaidRequest({ providerId: job.providerId, modelId: job.modelId, action: generation.action as "image.generate" | "image.edit", referenceCount: generation.references.length });
+    const context = registry.context(provider);
     let current = getJob(job.id)!;
     let outputs = [] as Awaited<ReturnType<NonNullable<typeof adapter.fetchResult>>>;
     if (current.status === "finalizing" && current.stagedOutputAssetIds.length > 0) {
@@ -65,19 +66,20 @@ export async function runJob(job: JobRecord) {
     updateJob(job.id, { status: "finalizing", phase: "finalizing", stagedOutputAssetIds: assetIds });
     finalizeJob(job, generation.id, assetIds);
   } catch (error) {
+    const diagnostic = extractProviderDiagnostic(error);
     if (error instanceof ProviderRateLimitError) {
       const attempts = job.attempt + 1;
-      if (attempts > 3) { updateJob(job.id, { status: "failed", phase: "failed", attempt: attempts, error: "retry_exhausted" }); setGenerationStatus(generation.id, "failed"); return; }
-      updateJob(job.id, { status: "rate_limited", phase: "rate_limited", attempt: attempts, nextRetryAt: delayFrom(error, 5000), error: redactProviderError(error) }); return;
+      if (attempts > 3) { updateJob(job.id, { status: "failed", phase: "failed", attempt: attempts, errorCode: "retry_exhausted", error: "retry_exhausted" }); setGenerationStatus(generation.id, "failed"); return; }
+      updateJob(job.id, { status: "rate_limited", phase: "rate_limited", attempt: attempts, nextRetryAt: delayFrom(error, 5000), errorCode: diagnostic.errorCode ?? "provider_rate_limited", httpStatus: diagnostic.httpStatus, error: diagnostic.safeMessage }); return;
     }
     if (error instanceof ProviderBusyError) {
       const attempts = job.attempt + 1;
-      if (attempts > 5) { updateJob(job.id, { status: "failed", phase: "failed", attempt: attempts, error: "retry_exhausted" }); setGenerationStatus(generation.id, "failed"); return; }
-      updateJob(job.id, { status: "provider_busy", phase: "provider_busy", attempt: attempts, nextRetryAt: delayFrom(error, 5000), error: redactProviderError(error) }); return;
+      if (attempts > 5) { updateJob(job.id, { status: "failed", phase: "failed", attempt: attempts, errorCode: "retry_exhausted", error: "retry_exhausted" }); setGenerationStatus(generation.id, "failed"); return; }
+      updateJob(job.id, { status: "provider_busy", phase: "provider_busy", attempt: attempts, nextRetryAt: delayFrom(error, 5000), errorCode: diagnostic.errorCode ?? "provider_busy", httpStatus: diagnostic.httpStatus, error: diagnostic.safeMessage }); return;
     }
-    if (error instanceof ProviderAmbiguousSubmitError) { updateJob(job.id, { status: "interrupted", phase: "interrupted", error: "ambiguous_submit" }); setGenerationStatus(generation.id, "interrupted"); return; }
-    if (error instanceof ProviderPollError) { updateJob(job.id, { status: "polling", phase: "polling", attempt: job.attempt + 1, nextRetryAt: new Date(Date.now() + 3000).toISOString(), error: redactProviderError(error) }); return; }
-    updateJob(job.id, { status: "failed", phase: "failed", error: redactProviderError(error) });
+    if (error instanceof ProviderAmbiguousSubmitError) { updateJob(job.id, { status: "interrupted", phase: "interrupted", error: "ambiguous_submit", errorCode: "ambiguous_submit", httpStatus: diagnostic.httpStatus }); setGenerationStatus(generation.id, "interrupted"); return; }
+    if (error instanceof ProviderPollError) { updateJob(job.id, { status: "polling", phase: "polling", attempt: job.attempt + 1, nextRetryAt: new Date(Date.now() + 3000).toISOString(), error: diagnostic.safeMessage, errorCode: diagnostic.errorCode, httpStatus: diagnostic.httpStatus }); return; }
+    updateJob(job.id, { status: "failed", phase: "failed", error: diagnostic.safeMessage, errorCode: diagnostic.errorCode, httpStatus: diagnostic.httpStatus });
     setGenerationStatus(generation.id, "failed");
   }
 }

@@ -4,12 +4,12 @@ import { useEffect, useMemo } from "react";
 import { Paperclip, Square, WandSparkles } from "lucide-react";
 import { getActionDescriptor } from "../actionRegistry";
 import { submitGenerationDraft } from "../generationController";
-import { useGenerationStore, getNodeActiveJob } from "../generationStore";
+import { useGenerationStore } from "../generationStore";
 import { isTerminalJob } from "../jobPoller";
 import type { PromptReference } from "../types";
 import { useProviderStore } from "@/v2/providers/providerStore";
 import { cancelJob } from "../generationApi";
-import { humanGenerationError, jobStatusMessage } from "../errorMessages";
+import { formatJobError, humanGenerationError, jobStatusMessage, translateJobStatus } from "../errorMessages";
 import { ModelPicker } from "./ModelPicker";
 import { ProviderPicker } from "./ProviderPicker";
 import { QualityPicker } from "./QualityPicker";
@@ -23,23 +23,16 @@ interface PromptBarProps {
   onRemoveReference: (reference: PromptReference) => void;
   onOpenAssetPicker: () => void;
   onMessage: (message: string) => void;
+  onViewJob?: (jobId: string) => void;
 }
 
 const counts = [1, 2, 4] as const;
 
 function statusLabel(status?: string) {
-  switch (status) {
-    case "queued": return "Preparing…";
-    case "preparing":
-    case "submitting": return "Starting…";
-    case "polling": return "Generating…";
-    case "downloading": return "Downloading…";
-    case "finalizing": return "Finishing…";
-    default: return null;
-  }
+  return status ? translateJobStatus(status) : null;
 }
 
-export function PromptBar({ projectId, onSubmitted, onBeforeSubmit, onRemoveReference, onOpenAssetPicker, onMessage }: PromptBarProps) {
+export function PromptBar({ projectId, onSubmitted, onBeforeSubmit, onRemoveReference, onOpenAssetPicker, onMessage, onViewJob }: PromptBarProps) {
   const activeTargetNodeId = useGenerationStore((state) => state.activeTargetNodeId);
   const activeProjectId = useGenerationStore((state) => state.activeProjectId);
   const draft = useGenerationStore((state) => activeTargetNodeId && activeProjectId ? state.draftByNode[`${activeProjectId}:${activeTargetNodeId}`] : null);
@@ -51,7 +44,7 @@ export function PromptBar({ projectId, onSubmitted, onBeforeSubmit, onRemoveRefe
   const loadingProviders = useProviderStore((state) => state.loading);
   const loadedProviders = useProviderStore((state) => state.loaded);
   const refreshProviders = useProviderStore((state) => state.refresh);
-  const activeJob = activeTargetNodeId ? getNodeActiveJob(activeTargetNodeId) : null;
+  const activeJob = useGenerationStore((state) => activeTargetNodeId ? state.jobs[state.nodeJob[activeTargetNodeId] ?? ""] ?? null : null);
   const terminalJob = useGenerationStore((state) => activeTargetNodeId ? state.terminalNodeJob[activeTargetNodeId] : null);
   const busy = Boolean(activeJob && !isTerminalJob(activeJob.status));
 
@@ -79,7 +72,7 @@ export function PromptBar({ projectId, onSubmitted, onBeforeSubmit, onRemoveRefe
 
   const disabledReason = !draft.prompt.trim() ? "请输入 Prompt" : action.referencePolicy === "required" && draft.references.length === 0 ? "请添加参考图" : providerUnavailable ? "历史 Provider 不可用，请重新选择" : modelUnavailable ? "历史 Model 不可用，请重新选择" : !draft.providerId || !draft.modelId ? "Provider 未启用" : null;
   const labelJob = terminalJob ?? activeJob;
-  const label = jobStatusMessage(labelJob?.status, labelJob?.error) ?? statusLabel(labelJob?.status);
+  const label = jobStatusMessage(labelJob?.status, labelJob?.errorCode ?? labelJob?.error) ?? statusLabel(labelJob?.status);
   const submit = async () => {
     if (disabledReason || busy || submitting) return;
     const ready = await onBeforeSubmit();
@@ -122,7 +115,7 @@ export function PromptBar({ projectId, onSubmitted, onBeforeSubmit, onRemoveRefe
         </button>
       </div>
       {providerUnavailable || modelUnavailable ? <div className="fzm-promptbar__status">历史选择不可用：{selectedProvider?.name ?? draft.providerId} / {draft.modelId}。请选择兼容 Provider。</div> : null}
-      {label || disabledReason ? <div className="fzm-promptbar__status">{label ?? disabledReason}</div> : null}
+      {label || disabledReason || terminalJob?.status === "failed" ? <div className="fzm-promptbar__status">{terminalJob?.status === "failed" ? <>生成失败：{formatJobError(terminalJob.errorCode ?? terminalJob.httpStatus ?? terminalJob.error, { brief: true })}<button className="fzm-button" type="button" onClick={() => onViewJob?.(terminalJob.id)}>查看详情</button></> : (label ?? disabledReason)}</div> : null}
     </section>
   );
 }

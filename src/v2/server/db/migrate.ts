@@ -4,6 +4,7 @@ import fs from "node:fs";
 import { migration001Initial } from "./migrations/001_initial";
 import { migration002ProviderJobs } from "./migrations/002_provider_jobs";
 import { migration003JobRecoveryState } from "./migrations/003_job_recovery_state";
+import { migration004JobDiagnostics } from "./migrations/004_job_diagnostics";
 
 interface Migration {
   version: number;
@@ -15,6 +16,7 @@ const migrations: Migration[] = [
   { version: 1, name: "initial", up: migration001Initial },
   { version: 2, name: "provider_jobs", up: migration002ProviderJobs },
   { version: 3, name: "job_recovery_state", up: migration003JobRecoveryState },
+  { version: 4, name: "job_diagnostics", up: migration004JobDiagnostics },
 ];
 
 function backupBeforeSchema2(dbPath?: string) {

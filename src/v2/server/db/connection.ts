@@ -10,7 +10,7 @@ type DbInstance = Database.Database;
 
 const globalForDb = globalThis as typeof globalThis & { __fzmV2Db?: DbInstance; __fzmV2DbPath?: string };
 
-export const V2_SCHEMA_VERSION = 3;
+export const V2_SCHEMA_VERSION = 4;
 
 export function getDbPath(): string {
   return path.join(getV2DataRoot(), "fzm.db");

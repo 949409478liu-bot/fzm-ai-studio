@@ -4,30 +4,20 @@ import { useEffect, useState } from "react";
 import { BaseNodeFrame } from "./BaseNodeFrame";
 import { assetContentUrl } from "@/v2/assets/assetApi";
 import { getGeneration, selectGenerationVariant } from "@/v2/generation/generationApi";
-import { getNodeActiveJob, useGenerationStore } from "@/v2/generation/generationStore";
+import { useGenerationStore } from "@/v2/generation/generationStore";
 import { isTerminalJob } from "@/v2/generation/jobPoller";
+import { translateJobStatus } from "@/v2/generation/errorMessages";
 import { VariantFilmstrip } from "@/v2/generation/components/VariantFilmstrip";
 import { useCanvasStore } from "@/v2/stores/canvasStore";
 import type { V2FlowNode } from "@/v2/types/canvas";
 
 function jobLabel(status?: string) {
-  switch (status) {
-    case "queued": return "Preparing…";
-    case "preparing":
-    case "submitting": return "Starting…";
-    case "polling": return "Generating…";
-    case "downloading": return "Downloading…";
-    case "finalizing": return "Finishing…";
-    case "failed": return "Failed";
-    case "interrupted": return "Interrupted";
-    case "canceled": return "Canceled";
-    default: return null;
-  }
+  return status ? translateJobStatus(status) : null;
 }
 
 export function ImageNode({ id, data }: NodeProps<V2FlowNode>) {
   const jobs = useGenerationStore((state) => state.jobs);
-  const activeJob = getNodeActiveJob(id);
+  const activeJob = useGenerationStore((state) => state.jobs[state.nodeJob[id] ?? ""] ?? null);
   const busy = Boolean(activeJob && !isTerminalJob(activeJob.status));
   const label = jobLabel(activeJob?.status);
   const [generation, setGeneration] = useState<{ outputAssetIds: string[]; selectedVariantIndex: number } | null>(null);
@@ -43,7 +33,7 @@ export function ImageNode({ id, data }: NodeProps<V2FlowNode>) {
     <BaseNodeFrame title={data.title}>
       <div className={`fzm-media-placeholder${busy ? " fzm-media-placeholder--busy" : ""}`}>
         {typeof data.assetId === "string" ? <img className="fzm-node-image" src={assetContentUrl(data.assetId, "thumbnail")} alt={data.originalName ?? "Image asset"} /> : <><ImageIcon size={24} /><span>Empty Image</span></>}
-        {label ? <div className="fzm-node-status">{label}</div> : null}
+        {label ? <div className="fzm-node-status">{label}{activeJob?.status === "failed" ? <button type="button" className="fzm-button" onClick={(event) => { event.stopPropagation(); window.dispatchEvent(new CustomEvent("fzm-open-generation-log", { detail: { jobId: activeJob.id } })); }}>查看原因</button> : null}</div> : null}
       </div>
       {data.generationId && generation ? <VariantFilmstrip assetIds={generation.outputAssetIds} selectedIndex={generation.selectedVariantIndex} onSelect={async (index) => {
         if (!data.generationId) return;

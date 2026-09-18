@@ -61,6 +61,10 @@ export interface JobDto {
   updatedAt: string;
   finishedAt: string | null;
   error: string | null;
+  attempt?: number;
+  nextRetryAt?: string | null;
+  errorCode?: string | null;
+  httpStatus?: number | null;
 }
 
 export interface ProviderSelection {

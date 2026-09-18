@@ -22,13 +22,13 @@ afterEach(() => {
 });
 
 describe("SQLite project repository", () => {
-  it("DB01-DB03 migrates idempotently with WAL and foreign keys", () => {
+  it("DB01-DB04 migrates idempotently with WAL and foreign keys", () => {
     const db = getDb();
-    expect(db.prepare("SELECT version FROM schema_migrations ORDER BY version").all()).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }]);
+    expect(db.prepare("SELECT version FROM schema_migrations ORDER BY version").all()).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }]);
     expect(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('provider_configs', 'generations', 'jobs', 'node_execution_state')").all()).toHaveLength(4);
     closeDbForTests();
     const reopened = getDb();
-    expect(reopened.prepare("SELECT version FROM schema_migrations ORDER BY version").all()).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }]);
+    expect(reopened.prepare("SELECT version FROM schema_migrations ORDER BY version").all()).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }]);
     expect(reopened.pragma("foreign_keys", { simple: true })).toBe(1);
     expect(String(reopened.pragma("journal_mode", { simple: true })).toLowerCase()).toBe("wal");
   });

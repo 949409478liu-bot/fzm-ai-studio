@@ -26,8 +26,12 @@ export async function cancelJob(jobId: string) {
   return parseJson<{ job: JobDto }>(await fetch(`/api/v2/jobs/${jobId}/cancel`, { method: "POST" }));
 }
 
-export async function listProjectJobs(projectId: string, status?: string) {
-  const suffix = status ? `?status=${encodeURIComponent(status)}` : "";
+export async function listProjectJobs(projectId: string, status?: string, options: { limit?: number; cursor?: string | null } = {}) {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  if (options.limit) params.set("limit", String(options.limit));
+  if (options.cursor) params.set("cursor", options.cursor);
+  const suffix = params.size ? `?${params}` : "";
   return parseJson<{ jobs: JobDto[]; nextCursor: string | null }>(await fetch(`/api/v2/projects/${projectId}/jobs${suffix}`, { cache: "no-store" }));
 }
 

@@ -21,8 +21,10 @@ export class ProviderPollError extends Error {}
 export function redactProviderError(error: unknown) {
   const raw = error instanceof Error ? error.message : String(error);
   return raw
-    .replace(/Bearer\s+[A-Za-z0-9._~+\-/]+=*/gi, "Bearer [REDACTED]")
-    .replace(/(api[-_ ]?key["':=\s]+)[^\s"']+/gi, "$1[REDACTED]")
+    .replace(/Bearer\s+[^\s,;"']+/gi, "Bearer [REDACTED]")
+    .replace(/(api[-_ ]?key|authorization|access[-_ ]?token|password|secret)(["'\s]*[:=]["'\s]*)[^\s,;"']+/gi, "$1$2[REDACTED]")
     .replace(/sk-[A-Za-z0-9_-]{8,}/g, "sk-[REDACTED]")
+    .replace(/https?:\/\/[^\s]+/gi, "[REDACTED_URL]")
+    .replace(/(?:^|\s)[^\s]*[?&](?:token|signature|key)=[^\s]+/gi, " [REDACTED_URL]")
     .slice(0, 500);
 }

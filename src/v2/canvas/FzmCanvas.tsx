@@ -39,6 +39,7 @@ import { TextNode } from "./nodes/TextNode";
 import { VideoNode } from "./nodes/VideoNode";
 import { PromptBar } from "@/v2/generation/components/PromptBar";
 import { GenerationInspect } from "@/v2/generation/components/GenerationInspect";
+import { GenerationLogDrawer } from "@/v2/generation/components/GenerationLogDrawer";
 import { defaultActionForReferences } from "@/v2/generation/actionRegistry";
 import { applyServerNodeResult } from "@/v2/generation/reconciliation";
 import { isTerminalJob, subscribeJob } from "@/v2/generation/jobPoller";
@@ -108,8 +109,21 @@ export function FzmCanvas({ project, revision, saveState, onBack, onReloadLatest
   const [assetsOpen, setAssetsOpen] = useState(false);
   const [assetPickerMode, setAssetPickerMode] = useState<"canvas" | "reference">("canvas");
   const [providersOpen, setProvidersOpen] = useState(false);
+  const [generationLogOpen, setGenerationLogOpen] = useState(false);
+  const [generationLogJobId, setGenerationLogJobId] = useState<string | null>(null);
   const connectingFrom = useRef<string | null>(null);
   const jobUnsubscribers = useRef(new Map<string, () => void>());
+
+  useEffect(() => {
+    const openLog = (event: Event) => {
+      const jobId = (event as CustomEvent<{ jobId: string }>).detail?.jobId;
+      if (!jobId) return;
+      setGenerationLogJobId(jobId);
+      setGenerationLogOpen(true);
+    };
+    window.addEventListener("fzm-open-generation-log", openLog);
+    return () => window.removeEventListener("fzm-open-generation-log", openLog);
+  }, []);
 
   const closeFloating = useCallback(() => {
     setCatalog(null);
@@ -329,7 +343,7 @@ export function FzmCanvas({ project, revision, saveState, onBack, onReloadLatest
   }, [project.id]);
 
   useEffect(() => {
-    const activeStatuses = ["queued", "preparing", "submitting", "polling", "downloading", "finalizing", "rate_limited", "provider_busy", "succeeded"];
+    const activeStatuses = ["queued", "preparing", "submitting", "polling", "downloading", "finalizing", "rate_limited", "provider_busy", "succeeded", "failed", "interrupted", "canceled"];
     let alive = true;
     void Promise.all(activeStatuses.map((status) => listProjectJobs(project.id, status).catch(() => ({ jobs: [] })))).then((pages) => {
       if (!alive) return;
@@ -338,7 +352,7 @@ export function FzmCanvas({ project, revision, saveState, onBack, onReloadLatest
           if (!job.nodeId) continue;
           useGenerationStore.getState().registerJob(job.nodeId, job);
           if (job.status === "succeeded") void applyServerNodeResult(project.id, job.nodeId, onServerRevision);
-          else beginJobWatch(job.nodeId, job.id);
+          else if (!isTerminalJob(job.status)) beginJobWatch(job.nodeId, job.id);
         }
       }
     });
@@ -403,6 +417,7 @@ export function FzmCanvas({ project, revision, saveState, onBack, onReloadLatest
         onReloadLatest={onReloadLatest}
         onAssets={() => setAssetsOpen((open) => !open)}
         onProviders={() => setProvidersOpen((open) => !open)}
+        onGenerationLog={() => { setGenerationLogJobId(null); setGenerationLogOpen(true); }}
         onMessage={(text) => setInfo({ x: window.innerWidth - 310, y: 76, text })}
       />
       {nodes.length === 0 ? (
@@ -476,7 +491,9 @@ export function FzmCanvas({ project, revision, saveState, onBack, onReloadLatest
         }}
         onOpenAssetPicker={() => { setAssetPickerMode("reference"); setAssetsOpen(true); }}
         onMessage={(text) => setInfo({ x: window.innerWidth - 330, y: 76, text })}
+        onViewJob={(jobId) => { setGenerationLogJobId(jobId); setGenerationLogOpen(true); }}
       />
+      <GenerationLogDrawer projectId={project.id} open={generationLogOpen} focusJobId={generationLogJobId} onClose={() => { setGenerationLogOpen(false); setGenerationLogJobId(null); }} />
       {info ? <div className="fzm-node-info fzm-floating" style={{ left: info.x, top: info.y, whiteSpace: "pre-line" }}>{info.text}</div> : null}
       <AssetDrawer projectId={project.id} open={assetsOpen} onClose={() => { setAssetsOpen(false); setAssetPickerMode("canvas"); }} onAddToCanvas={(asset) => {
         if (assetPickerMode === "reference") {
