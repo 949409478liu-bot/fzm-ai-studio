@@ -38,13 +38,15 @@ import { ImageNode } from "./nodes/ImageNode";
 import { TextNode } from "./nodes/TextNode";
 import { VideoNode } from "./nodes/VideoNode";
 import { PromptBar } from "@/v2/generation/components/PromptBar";
+import { GenerationInspect } from "@/v2/generation/components/GenerationInspect";
 import { defaultActionForReferences } from "@/v2/generation/actionRegistry";
 import { applyServerNodeResult } from "@/v2/generation/reconciliation";
 import { isTerminalJob, subscribeJob } from "@/v2/generation/jobPoller";
-import { listProjectJobs } from "@/v2/generation/generationApi";
+import { getGeneration, listProjectJobs } from "@/v2/generation/generationApi";
+import { draftFromGeneration } from "@/v2/generation/draftFromGeneration";
 import { resolveGraphReferences } from "@/v2/generation/referenceResolver";
-import { useGenerationStore } from "@/v2/generation/generationStore";
-import type { GenerationActionId, PromptReference } from "@/v2/generation/types";
+import { getPromptDraft, useGenerationStore } from "@/v2/generation/generationStore";
+import type { GenerationActionId, GenerationRecordDto, PromptReference } from "@/v2/generation/types";
 import { selectCanvasEdges, selectCanvasNodes, useCanvasStore } from "@/v2/stores/canvasStore";
 import type { SaveState, V2Project } from "@/v2/projects/types";
 import type { CanvasTool, FloatingPosition, V2FlowEdge, V2FlowNode, V2NodeKind } from "@/v2/types/canvas";
@@ -99,6 +101,7 @@ export function FzmCanvas({ project, revision, saveState, onBack, onReloadLatest
   const [catalog, setCatalog] = useState<FloatingPosition | null>(null);
   const [canvasMenu, setCanvasMenu] = useState<FloatingPosition | null>(null);
   const [nodeMenu, setNodeMenu] = useState<(FloatingPosition & { nodeId: string }) | null>(null);
+  const [inspect, setInspect] = useState<(FloatingPosition & { nodeId: string; generationId?: string | null }) | null>(null);
   const [handleMenu, setHandleMenu] = useState<(FloatingPosition & { sourceNodeId: string }) | null>(null);
   const [actionMenu, setActionMenu] = useState<(FloatingPosition & { sourceNodeId: string; sourceKind: string }) | null>(null);
   const [info, setInfo] = useState<(FloatingPosition & { text: string }) | null>(null);
@@ -106,11 +109,13 @@ export function FzmCanvas({ project, revision, saveState, onBack, onReloadLatest
   const [assetPickerMode, setAssetPickerMode] = useState<"canvas" | "reference">("canvas");
   const [providersOpen, setProvidersOpen] = useState(false);
   const connectingFrom = useRef<string | null>(null);
+  const jobUnsubscribers = useRef(new Map<string, () => void>());
 
   const closeFloating = useCallback(() => {
     setCatalog(null);
     setCanvasMenu(null);
     setNodeMenu(null);
+    setInspect(null);
     setHandleMenu(null);
     setActionMenu(null);
     setInfo(null);
@@ -163,6 +168,18 @@ export function FzmCanvas({ project, revision, saveState, onBack, onReloadLatest
     const references = resolveGraphReferences(nodeId, useCanvasStore.getState().history.present.nodes, useCanvasStore.getState().history.present.edges);
     useGenerationStore.getState().setActiveTarget(project.id, nodeId, action ?? defaultActionForReferences(references.length), references);
   }, [project.id]);
+
+  const loadGenerationIntoPrompt = useCallback((nodeId: string, generation: GenerationRecordDto) => {
+    const references = resolveGraphReferences(nodeId, useCanvasStore.getState().history.present.nodes, useCanvasStore.getState().history.present.edges);
+    useGenerationStore.getState().replaceDraft(project.id, nodeId, draftFromGeneration(nodeId, generation, references));
+  }, [project.id]);
+
+  const rerunNode = useCallback(async (nodeId: string) => {
+    const node = useCanvasStore.getState().history.present.nodes.find((item) => item.id === nodeId);
+    if (!node?.data.generationId) { openPromptForNode(nodeId); return; }
+    const { generation } = await getGeneration(node.data.generationId);
+    loadGenerationIntoPrompt(nodeId, generation);
+  }, [loadGenerationIntoPrompt, openPromptForNode]);
 
   useEffect(() => {
     if (useCanvasStore.getState().selectedNodeIds.length !== 1) useGenerationStore.getState().setActiveTarget(project.id, null);
@@ -293,16 +310,26 @@ export function FzmCanvas({ project, revision, saveState, onBack, onReloadLatest
   }, [openPromptForNode, project.id, setSelected]);
 
   const beginJobWatch = useCallback((nodeId: string, jobId: string) => {
+    if (jobUnsubscribers.current.has(jobId)) return;
     updateConnectedEdgeStatus(nodeId, "running");
-    subscribeJob(jobId, (job) => {
+    const unsubscribe = subscribeJob(jobId, (job) => {
       if (!isTerminalJob(job.status)) return;
-      if (job.status === "succeeded") void applyServerNodeResult(project.id, nodeId, onServerRevision);
+      jobUnsubscribers.current.get(jobId)?.();
+      jobUnsubscribers.current.delete(jobId);
+      if (job.status === "succeeded") void Promise.resolve(onFlushPendingSave()).then(() => applyServerNodeResult(project.id, nodeId, onServerRevision));
       if (job.status === "failed") updateConnectedEdgeStatus(nodeId, "failed");
     });
-  }, [onServerRevision, project.id, updateConnectedEdgeStatus]);
+    jobUnsubscribers.current.set(jobId, unsubscribe);
+  }, [onFlushPendingSave, onServerRevision, project.id, updateConnectedEdgeStatus]);
+
+  useEffect(() => () => {
+    for (const unsubscribe of jobUnsubscribers.current.values()) unsubscribe();
+    jobUnsubscribers.current.clear();
+    useGenerationStore.getState().clearProjectRuntime(project.id);
+  }, [project.id]);
 
   useEffect(() => {
-    const activeStatuses = ["queued", "preparing", "submitting", "polling", "downloading", "finalizing", "rate_limited", "provider_busy"];
+    const activeStatuses = ["queued", "preparing", "submitting", "polling", "downloading", "finalizing", "rate_limited", "provider_busy", "succeeded"];
     let alive = true;
     void Promise.all(activeStatuses.map((status) => listProjectJobs(project.id, status).catch(() => ({ jobs: [] })))).then((pages) => {
       if (!alive) return;
@@ -310,12 +337,13 @@ export function FzmCanvas({ project, revision, saveState, onBack, onReloadLatest
         for (const job of page.jobs) {
           if (!job.nodeId) continue;
           useGenerationStore.getState().registerJob(job.nodeId, job);
-          beginJobWatch(job.nodeId, job.id);
+          if (job.status === "succeeded") void applyServerNodeResult(project.id, job.nodeId, onServerRevision);
+          else beginJobWatch(job.nodeId, job.id);
         }
       }
     });
     return () => { alive = false; };
-  }, [beginJobWatch, project.id]);
+  }, [beginJobWatch, onServerRevision, project.id]);
 
   return (
     <main
@@ -408,8 +436,8 @@ export function FzmCanvas({ project, revision, saveState, onBack, onReloadLatest
           onDuplicate={() => { duplicateNodeById(nodeMenu.nodeId); closeFloating(); }}
           onDisconnect={() => { disconnectNode(nodeMenu.nodeId); closeFloating(); }}
           onRun={() => { openPromptForNode(nodeMenu.nodeId); closeFloating(); }}
-          onRerun={() => { openPromptForNode(nodeMenu.nodeId); closeFloating(); }}
-          onInspect={() => setInfo({ x: nodeMenu.x + 14, y: nodeMenu.y, text: `Node ${nodeMenu.nodeId}\nGeneration details are available from the current node result and recent runs.` })}
+          onRerun={() => { void rerunNode(nodeMenu.nodeId); closeFloating(); }}
+          onInspect={() => { const node = nodes.find((item) => item.id === nodeMenu.nodeId); setInspect({ ...nodeMenu, generationId: node?.data.generationId }); setNodeMenu(null); }}
           onDelete={() => { deleteSelected(); closeFloating(); }}
         />
       ) : null}
@@ -434,6 +462,7 @@ export function FzmCanvas({ project, revision, saveState, onBack, onReloadLatest
           }}
         />
       ) : null}
+      {inspect ? <GenerationInspect projectId={project.id} nodeId={inspect.nodeId} generationId={inspect.generationId} position={inspect} onLoad={(generation) => { loadGenerationIntoPrompt(inspect.nodeId, generation); setInspect(null); }} onClose={() => setInspect(null)} /> : null}
       <PromptBar
         projectId={project.id}
         onSubmitted={beginJobWatch}
@@ -442,7 +471,7 @@ export function FzmCanvas({ project, revision, saveState, onBack, onReloadLatest
           const draftNodeId = useGenerationStore.getState().activeTargetNodeId;
           if (!draftNodeId) return;
           if (reference.source === "graph" && reference.edgeId) removeEdgeById(reference.edgeId);
-          const draft = useGenerationStore.getState().draftByNode[draftNodeId];
+          const draft = getPromptDraft(project.id, draftNodeId);
           useGenerationStore.getState().updateDraft(draftNodeId, { references: draft.references.filter((item) => item !== reference) });
         }}
         onOpenAssetPicker={() => { setAssetPickerMode("reference"); setAssetsOpen(true); }}
@@ -453,7 +482,7 @@ export function FzmCanvas({ project, revision, saveState, onBack, onReloadLatest
         if (assetPickerMode === "reference") {
           const nodeId = useGenerationStore.getState().activeTargetNodeId;
           if (nodeId && asset.kind === "image") {
-            const draft = useGenerationStore.getState().draftByNode[nodeId];
+            const draft = getPromptDraft(project.id, nodeId);
             const references = [...draft.references, { assetId: asset.id, role: "reference-image" as const, order: draft.references.length, source: "manual" as const }];
             useGenerationStore.getState().updateDraft(nodeId, { references, action: "image.edit" });
           }

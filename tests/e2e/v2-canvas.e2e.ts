@@ -32,8 +32,8 @@ async function fetchCanvas(page: Page, projectId: string) {
   }, projectId);
 }
 
-async function seedFakeProvider(page: Page, id = "fake-phase4") {
-  await page.evaluate(async (providerId) => {
+async function seedFakeProvider(page: Page, id = "fake-phase4", options: { async?: boolean; fail?: boolean; interrupt?: boolean; name?: string } = {}) {
+  await page.evaluate(async ({ providerId, options }) => {
     const response = await fetch("/api/v2/providers", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -41,13 +41,32 @@ async function seedFakeProvider(page: Page, id = "fake-phase4") {
         id: providerId,
         kind: "custom",
         fake: true,
+        async: options.async === true,
+        fail: options.fail === true,
+        interrupt: options.interrupt === true,
         enabled: true,
-        name: "Fake Phase 4",
+        name: options.name ?? "Fake Phase 4",
         models: [{ id: "fake-image", label: "Fake Image", capabilities: ["image.generate", "image.edit"] }],
       }),
     });
     if (!response.ok) throw new Error(`fake_provider_seed_failed_${response.status}`);
-  }, id);
+  }, { providerId: id, options });
+}
+
+async function fakeStats(page: Page) {
+  return page.evaluate(async () => (await (await fetch("/api/v2/test/fake-provider", { cache: "no-store" })).json()).stats as Record<string, number>);
+}
+
+async function resetFakeStats(page: Page) {
+  await page.evaluate(async () => { await fetch("/api/v2/test/fake-provider", { method: "DELETE" }); });
+}
+
+async function addImageAndGenerate(page: Page, prompt: string, providerId?: string) {
+  await page.getByLabel("Add").click();
+  await page.getByRole("menu").getByRole("button", { name: "Image" }).click();
+  if (providerId) await page.getByLabel("Provider").selectOption(providerId);
+  await page.getByRole("textbox", { name: "Prompt" }).fill(prompt);
+  await page.getByRole("button", { name: /生成/ }).click();
 }
 
 test("V2 durable project canvas and asset interactions", async ({ page }) => {
@@ -158,6 +177,93 @@ test("Phase 4 image handle opens Action Picker and creates edit reference", asyn
   await expect(page.locator(".fzm-reference-chip img")).toBeVisible();
   const projectId = await projectIdFromUrl(page);
   await expect.poll(async () => JSON.stringify((await fetchCanvas(page, projectId)).nodes)).toContain("source.png");
+});
+
+test("RC01/RC10 failed generation keeps draft and restores settings", async ({ page }) => {
+  await createProject(page);
+  await seedFakeProvider(page, "fake-rc-fail", { fail: true });
+  await addImageAndGenerate(page, "failure keeps my prompt", "fake-rc-fail");
+  await expect(page.getByText(/生成失败/)).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("textbox", { name: "Prompt" })).toHaveValue("failure keeps my prompt");
+  const projectId = await projectIdFromUrl(page);
+  await expect.poll(async () => {
+    const response = await page.evaluate(async (id) => (await (await fetch(`/api/v2/projects/${id}/generations?nodeId=${encodeURIComponent((await (await fetch(`/api/v2/projects/${id}/canvas`)).json()).nodes[0].id)}&limit=10`)).json()).generations[0]?.status, projectId);
+    return response;
+  }).toBe("failed");
+  await page.locator(".react-flow__node").click({ button: "right" });
+  await page.getByRole("menu").getByRole("button", { name: "Re-run" }).click();
+  await expect(page.getByRole("textbox", { name: "Prompt" })).toHaveValue("failure keeps my prompt");
+});
+
+test("RC02 interrupted generation shows ambiguous submit UX", async ({ page }) => {
+  await createProject(page);
+  await seedFakeProvider(page, "fake-rc-interrupt", { interrupt: true });
+  await addImageAndGenerate(page, "ambiguous paid submit", "fake-rc-interrupt");
+  await expect(page.getByText(/避免重复扣费|任务中断/)).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator(".react-flow__node img.fzm-node-image")).toHaveCount(0);
+  const projectId = await projectIdFromUrl(page);
+  await expect.poll(async () => {
+    const body = await page.evaluate(async (id) => (await (await fetch(`/api/v2/projects/${id}/generations?limit=1`)).json()).generations[0]?.status, projectId);
+    return body;
+  }).toBe("interrupted");
+});
+
+test("RC03 cancel async generation rejects late result", async ({ page }) => {
+  await createProject(page);
+  await resetFakeStats(page);
+  await seedFakeProvider(page, "fake-rc-cancel", { async: true });
+  await addImageAndGenerate(page, "cancel me", "fake-rc-cancel");
+  await expect.poll(async () => (await fakeStats(page))["fake-rc-cancel:submit"] ?? 0).toBe(1);
+  await expect(page.getByRole("button", { name: /Cancel/ })).toBeVisible();
+  await page.getByRole("button", { name: /Cancel/ }).click();
+  await expect(page.getByText(/已取消/)).toBeVisible({ timeout: 15_000 });
+  await page.waitForTimeout(1000);
+  await expect(page.locator(".react-flow__node img.fzm-node-image")).toHaveCount(0);
+  expect((await fakeStats(page))["fake-rc-cancel:submit"]).toBe(1);
+});
+
+test("RC04/RC05 active async job reload reattaches without duplicate submit", async ({ page }) => {
+  await createProject(page);
+  await resetFakeStats(page);
+  await seedFakeProvider(page, "fake-rc-active", { async: true });
+  await addImageAndGenerate(page, "reload active job", "fake-rc-active");
+  await expect.poll(async () => (await fakeStats(page))["fake-rc-active:submit"] ?? 0).toBe(1);
+  await page.reload();
+  await expect(page.locator(".react-flow__node img.fzm-node-image")).toBeVisible({ timeout: 15_000 });
+  expect((await fakeStats(page))["fake-rc-active:submit"]).toBe(1);
+});
+
+test("RC11 double click uses one paid submit", async ({ page }) => {
+  await createProject(page);
+  await resetFakeStats(page);
+  await seedFakeProvider(page, "fake-rc-double", { async: true });
+  await page.getByLabel("Add").click();
+  await page.getByRole("menu").getByRole("button", { name: "Image" }).click();
+  await page.getByLabel("Provider").selectOption("fake-rc-double");
+  await page.getByRole("textbox", { name: "Prompt" }).fill("double click guard");
+  await Promise.allSettled([page.getByRole("button", { name: /生成/ }).click(), page.getByRole("button", { name: /生成/ }).click()]);
+  await expect(page.locator(".react-flow__node img.fzm-node-image")).toBeVisible({ timeout: 15_000 });
+  const projectId = await projectIdFromUrl(page);
+  const counts = await page.evaluate(async (id) => {
+    const generations = await (await fetch(`/api/v2/projects/${id}/generations?limit=10`)).json();
+    const jobs = await (await fetch(`/api/v2/projects/${id}/jobs`)).json();
+    return { generations: generations.generations.length, jobs: jobs.jobs.length };
+  }, projectId);
+  expect(counts).toEqual({ generations: 1, jobs: 1 });
+  expect((await fakeStats(page))["fake-rc-double:submit"]).toBe(1);
+});
+
+test("RC12 project draft isolation", async ({ page }) => {
+  await createProject(page);
+  await seedFakeProvider(page, "fake-rc-isolation");
+  await page.getByLabel("Add").click();
+  await page.getByRole("menu").getByRole("button", { name: "Image" }).click();
+  await page.getByRole("textbox", { name: "Prompt" }).fill("project A draft");
+  await page.getByLabel("Back").click();
+  await createProject(page);
+  await page.getByLabel("Add").click();
+  await page.getByRole("menu").getByRole("button", { name: "Image" }).click();
+  await expect(page.getByRole("textbox", { name: "Prompt" })).not.toHaveValue("project A draft");
 });
 
 test("V2 project navigation and rename persist", async ({ page }) => {

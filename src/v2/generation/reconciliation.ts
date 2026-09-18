@@ -11,6 +11,10 @@ export async function applyServerNodeResult(projectId: string, targetNodeId: str
     setRevision(latest.revision);
     return false;
   }
+  if (localNode.data.generationId && localNode.data.generationId !== serverNode.generationId) {
+    setRevision(latest.revision);
+    return false;
+  }
   useCanvasStore.getState().updateNodeGenerationResult(targetNodeId, serverNode.assetId, serverNode.generationId);
   setRevision(latest.revision);
   return true;

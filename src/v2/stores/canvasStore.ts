@@ -28,6 +28,7 @@ interface CanvasStoreState {
   addEdgeByIds: (source: string, target: string, role?: string) => boolean;
   updateNodeGenerationResult: (nodeId: string, assetId: string, generationId: string) => void;
   updateGenerationSelection: (nodeId: string, assetId: string, generationId: string) => void;
+  updateNodeGenerationStatus: (nodeId: string, status: NonNullable<V2FlowEdge["data"]>["status"]) => void;
   updateConnectedEdgeStatus: (targetNodeId: string, status: NonNullable<V2FlowEdge["data"]>["status"]) => void;
   duplicateNodeById: (nodeId: string) => void;
   duplicateSelected: () => void;
@@ -122,6 +123,8 @@ export const useCanvasStore = create<CanvasStoreState>((set, get) => ({
       const nodes = snapshot.nodes.map((node) => (node.id === nodeId ? { ...node, data: { ...node.data, assetId, generationId } } : node));
       return { history: { ...state.history, present: { ...snapshot, nodes } } };
     }),
+
+  updateNodeGenerationStatus: (nodeId, status) => get().updateConnectedEdgeStatus(nodeId, status),
 
   updateConnectedEdgeStatus: (targetNodeId, status) =>
     set((state) => {

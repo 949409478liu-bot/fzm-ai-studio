@@ -1,5 +1,6 @@
 import "server-only";
 import sharp from "sharp";
+import { ProviderAmbiguousSubmitError } from "../errors";
 import type { ProviderAdapter, ProviderContext, ProviderGenerationRequest, ProviderModelDescriptor, ProviderPollResult, ProviderSubmission } from "../types";
 
 const onePixelPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC", "base64");
@@ -19,12 +20,22 @@ async function outputs(request: ProviderGenerationRequest) {
   return Promise.all(Array.from({ length: count }, async (_, index) => ({ bytes: count === 1 ? onePixelPng : await fakePng(index + 1), mimeType: "image/png", suggestedName: `fake-${request.generationId}-${index}.png`, metadata: { fakeProvider: true, action: request.action, referenceCount: request.references.length, index } })));
 }
 
+function fakeStats() {
+  const globalObject = globalThis as typeof globalThis & { __FZM_FAKE_PROVIDER_STATS?: Record<string, number> };
+  globalObject.__FZM_FAKE_PROVIDER_STATS ??= {};
+  return globalObject.__FZM_FAKE_PROVIDER_STATS;
+}
+
+function count(key: string) { const stats = fakeStats(); stats[key] = (stats[key] ?? 0) + 1; }
+
 export const fakeAdapter: ProviderAdapter = {
   kind: "custom",
   async test() { return { ok: true, message: "Fake provider ready", testMode: "config-only" }; },
   async listModels(context) { return models(context); },
   async submit(context, request): Promise<ProviderSubmission> {
+    count(`${context.provider.id}:submit`);
     if (context.config.fail === true) throw new Error("fake_generation_failed");
+    if (context.config.interrupt === true) throw new ProviderAmbiguousSubmitError("ambiguous_submit");
     if (context.config.async === true) return { mode: "async", remoteTaskId: request.jobId, ticket: { polls: 0, request: { count: Number(request.params.count ?? 1), action: request.action, generationId: request.generationId, referenceCount: request.references.length } }, nextPollMs: 250 };
     return { mode: "completed", outputs: await outputs(request) };
   },

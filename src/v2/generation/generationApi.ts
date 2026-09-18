@@ -9,7 +9,13 @@ async function parseJson<T>(response: Response): Promise<T> {
 }
 
 export async function createGeneration(input: SubmitGenerationInput & { requestId: string }) {
-  return parseJson<{ generation: GenerationRecordDto; job: JobDto }>(await fetch(`/api/v2/projects/${input.projectId}/generations`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) }));
+  const post = () => fetch(`/api/v2/projects/${input.projectId}/generations`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
+  try {
+    return await parseJson<{ generation: GenerationRecordDto; job: JobDto }>(await post());
+  } catch (error) {
+    if ((error as { response?: Response }).response) throw error;
+    return parseJson<{ generation: GenerationRecordDto; job: JobDto }>(await post());
+  }
 }
 
 export async function getJob(jobId: string) {

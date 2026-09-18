@@ -18,7 +18,14 @@ async function tick(jobId: string) {
     const { job } = await getJob(jobId);
     useGenerationStore.getState().updateJob(job);
     listeners.get(jobId)?.forEach((listener) => listener(job));
-    if (!terminal.has(job.status) && listeners.has(jobId)) timers.set(jobId, setTimeout(() => void tick(jobId), delayFor(job)));
+    if (terminal.has(job.status)) {
+      const timer = timers.get(jobId);
+      if (timer) clearTimeout(timer);
+      timers.delete(jobId);
+      listeners.delete(jobId);
+      return;
+    }
+    if (listeners.has(jobId)) timers.set(jobId, setTimeout(() => void tick(jobId), delayFor(job)));
   } catch {
     if (listeners.has(jobId)) timers.set(jobId, setTimeout(() => void tick(jobId), 2500));
   }
@@ -42,4 +49,8 @@ export function subscribeJob(jobId: string, listener: (job: JobDto) => void) {
 
 export function isTerminalJob(status: string) {
   return terminal.has(status);
+}
+
+export function __jobPollerStats() {
+  return { timers: timers.size, listeners: listeners.size };
 }

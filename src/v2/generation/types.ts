@@ -19,7 +19,7 @@ export interface PromptReference {
   assetId: string;
   role: ReferenceRole;
   order: number;
-  source: "graph" | "manual";
+  source: "graph" | "manual" | "history";
   edgeId?: string;
 }
 
