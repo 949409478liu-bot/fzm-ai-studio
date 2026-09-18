@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 import { getDb } from "@/v2/server/db/connection";
 import type { DomainCanvasEdge, DomainCanvasNode, DomainCanvasSnapshot, V2Project } from "@/v2/projects/types";
+import { validateCanvasSnapshot } from "./canvasValidation";
 
 function now() {
   return new Date().toISOString();
@@ -114,6 +115,12 @@ export class RevisionConflictError extends Error {
   }
 }
 
+export class CanvasValidationError extends Error {
+  constructor(public reason: string) {
+    super(reason);
+  }
+}
+
 export function saveCanvasSnapshot(input: {
   projectId: string;
   expectedRevision: number;
@@ -121,22 +128,59 @@ export function saveCanvasSnapshot(input: {
   nodes: DomainCanvasNode[];
   edges: DomainCanvasEdge[];
 }, db = getDb()): DomainCanvasSnapshot {
+  const validation = validateCanvasSnapshot(input.nodes, input.edges);
+  if (!validation.ok) throw new CanvasValidationError(validation.reason);
   const transaction = db.transaction(() => {
     const project = getProject(input.projectId, db);
     if (!project) throw new Error("project_not_found");
     if (project.revision !== input.expectedRevision) throw new RevisionConflictError(input.expectedRevision, project.revision);
 
-    db.prepare("DELETE FROM edges WHERE project_id = ?").run(input.projectId);
-    db.prepare("DELETE FROM nodes WHERE project_id = ?").run(input.projectId);
+    const incomingNodeIds = new Set(input.nodes.map((node) => node.id));
+    const incomingEdgeIds = new Set(input.edges.map((edge) => edge.id));
+    const existingNodeIds = (db.prepare("SELECT id FROM nodes WHERE project_id = ?").all(input.projectId) as Array<{ id: string }>).map((row) => row.id);
+    const existingEdgeIds = (db.prepare("SELECT id FROM edges WHERE project_id = ?").all(input.projectId) as Array<{ id: string }>).map((row) => row.id);
 
-    const insertNode = db.prepare(`INSERT INTO nodes (id, project_id, type, x, y, width, height, asset_id, generation_id, data_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    const upsertNode = db.prepare(`
+      INSERT INTO nodes (id, project_id, type, x, y, width, height, asset_id, generation_id, data_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        type = excluded.type,
+        x = excluded.x,
+        y = excluded.y,
+        width = excluded.width,
+        height = excluded.height,
+        asset_id = excluded.asset_id,
+        generation_id = excluded.generation_id,
+        data_json = excluded.data_json
+    `);
     for (const node of input.nodes) {
-      insertNode.run(node.id, input.projectId, node.type, node.x, node.y, node.width, node.height, node.assetId, node.generationId, JSON.stringify(node.data ?? {}));
+      upsertNode.run(node.id, input.projectId, node.type, node.x, node.y, node.width, node.height, node.assetId, node.generationId, JSON.stringify(node.data ?? {}));
     }
 
-    const insertEdge = db.prepare(`INSERT INTO edges (id, project_id, source_node_id, target_node_id, role, status) VALUES (?, ?, ?, ?, ?, ?)`);
+    const upsertEdge = db.prepare(`
+      INSERT INTO edges (id, project_id, source_node_id, target_node_id, role, status)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        source_node_id = excluded.source_node_id,
+        target_node_id = excluded.target_node_id,
+        role = excluded.role,
+        status = excluded.status
+    `);
     for (const edge of input.edges) {
-      insertEdge.run(edge.id, input.projectId, edge.sourceNodeId, edge.targetNodeId, edge.role, edge.status || "ready");
+      upsertEdge.run(edge.id, input.projectId, edge.sourceNodeId, edge.targetNodeId, edge.role, edge.status || "ready");
+    }
+
+    const deleteEdge = db.prepare("DELETE FROM edges WHERE project_id = ? AND id = ?");
+    for (const edgeId of existingEdgeIds) {
+      if (!incomingEdgeIds.has(edgeId)) deleteEdge.run(input.projectId, edgeId);
+    }
+    const deleteNodeEdges = db.prepare("DELETE FROM edges WHERE project_id = ? AND (source_node_id = ? OR target_node_id = ?)");
+    const deleteNode = db.prepare("DELETE FROM nodes WHERE project_id = ? AND id = ?");
+    for (const nodeId of existingNodeIds) {
+      if (!incomingNodeIds.has(nodeId)) {
+        deleteNodeEdges.run(input.projectId, nodeId, nodeId);
+        deleteNode.run(input.projectId, nodeId);
+      }
     }
 
     db.prepare("UPDATE projects SET viewport_json = ?, revision = revision + 1, updated_at = ? WHERE id = ?").run(JSON.stringify(input.viewport), now(), input.projectId);

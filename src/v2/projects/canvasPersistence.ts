@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { flowEdgeToDomain, flowNodeToDomain } from "./canvasMapper";
 import { saveCanvas } from "./projectApi";
 import type { SaveState } from "./types";
@@ -16,57 +16,85 @@ interface Options {
 export function useCanvasPersistence({ projectId, revision, setRevision, setSaveState }: Options) {
   const revisionRef = useRef(revision);
   const tokenRef = useRef(0);
+  const conflictLockedRef = useRef(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savingRef = useRef(false);
+  const pendingRef = useRef(false);
 
   useEffect(() => {
     revisionRef.current = revision;
   }, [revision]);
 
+  const flushPendingSave = useCallback(async (): Promise<"saved" | "conflict" | "failed" | "locked"> => {
+    if (conflictLockedRef.current) {
+      setSaveState("conflict");
+      return "locked";
+    }
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    if (savingRef.current) {
+      pendingRef.current = true;
+      return "failed";
+    }
+    savingRef.current = true;
+    pendingRef.current = false;
+    setSaveState("saving");
+    const state = useCanvasStore.getState();
+    try {
+      const snapshot = await saveCanvas(projectId, {
+        expectedRevision: revisionRef.current,
+        viewport: state.viewport,
+        nodes: state.history.present.nodes.map(flowNodeToDomain),
+        edges: state.history.present.edges.map(flowEdgeToDomain),
+      });
+      revisionRef.current = snapshot.revision;
+      setRevision(snapshot.revision);
+      setSaveState("saved");
+      return "saved";
+    } catch (error) {
+      const body = (error as { body?: { error?: string } }).body;
+      if (body?.error === "revision_conflict") {
+        conflictLockedRef.current = true;
+        setSaveState("conflict");
+        return "conflict";
+      }
+      setSaveState("failed");
+      return "failed";
+    } finally {
+      savingRef.current = false;
+    }
+  }, [projectId, setRevision, setSaveState]);
+
+  const clearConflictLock = useCallback((nextRevision: number) => {
+    conflictLockedRef.current = false;
+    revisionRef.current = nextRevision;
+    setRevision(nextRevision);
+    setSaveState("saved");
+  }, [setRevision, setSaveState]);
+
   useEffect(() => {
     tokenRef.current += 1;
     const token = tokenRef.current;
-    let timeout: ReturnType<typeof setTimeout> | null = null;
-    let saving = false;
-    let pending = false;
-
     const flush = async () => {
       if (token !== tokenRef.current) return;
-      if (saving) {
-        pending = true;
+      if (conflictLockedRef.current) return;
+      if (savingRef.current) {
+        pendingRef.current = true;
         return;
       }
-      saving = true;
-      pending = false;
-      setSaveState("saving");
-      const state = useCanvasStore.getState();
-      try {
-        const snapshot = await saveCanvas(projectId, {
-          expectedRevision: revisionRef.current,
-          viewport: state.viewport,
-          nodes: state.history.present.nodes.map(flowNodeToDomain),
-          edges: state.history.present.edges.map(flowEdgeToDomain),
-        });
-        if (token !== tokenRef.current) return;
-        revisionRef.current = snapshot.revision;
-        setRevision(snapshot.revision);
-        setSaveState("saved");
-      } catch (error) {
-        if (token !== tokenRef.current) return;
-        const body = (error as { body?: { error?: string; currentRevision?: number } }).body;
-        if (body?.error === "revision_conflict") {
-          if (typeof body.currentRevision === "number") revisionRef.current = body.currentRevision;
-          setSaveState("conflict");
-        } else {
-          setSaveState("failed");
-        }
-      } finally {
-        saving = false;
-        if (pending && token === tokenRef.current) schedule();
+      const result = await flushPendingSave();
+      if (result === "saved" && pendingRef.current && token === tokenRef.current) {
+        pendingRef.current = false;
+        schedule();
       }
     };
 
     const schedule = () => {
-      if (timeout) clearTimeout(timeout);
-      timeout = setTimeout(flush, 650);
+      if (conflictLockedRef.current) return;
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(flush, 650);
     };
 
     const unsubscribe = useCanvasStore.subscribe((state, previous) => {
@@ -77,8 +105,11 @@ export function useCanvasPersistence({ projectId, revision, setRevision, setSave
     setSaveState("saved");
     return () => {
       tokenRef.current += 1;
-      if (timeout) clearTimeout(timeout);
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
       unsubscribe();
     };
-  }, [projectId, setRevision, setSaveState]);
+  }, [flushPendingSave, projectId, setSaveState]);
+
+  return { flushPendingSave, clearConflictLock };
 }

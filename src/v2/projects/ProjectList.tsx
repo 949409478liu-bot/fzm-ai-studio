@@ -6,7 +6,7 @@ import { createProject, deleteProject, listProjects, renameProject } from "./pro
 import type { V2Project } from "./types";
 
 interface ProjectListProps {
-  onOpen: (projectId: string) => void;
+  onOpen: (projectId: string) => void | Promise<void>;
 }
 
 export function ProjectList({ onOpen }: ProjectListProps) {
@@ -23,7 +23,7 @@ export function ProjectList({ onOpen }: ProjectListProps) {
     setBusy(true);
     try {
       const project = await createProject("未命名画布");
-      onOpen(project.id);
+      await onOpen(project.id);
     } finally {
       setBusy(false);
     }

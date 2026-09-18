@@ -6,7 +6,7 @@ import path from "node:path";
 import { findProjectAssetBySha, insertAsset } from "./repository";
 import { verifyMagic } from "./mime";
 import { assetRoot, relativeBlobPath, resolveV2Path, tempPath } from "./paths";
-import { generateImageThumbnail, inspectImage } from "./thumbnail";
+import { ensureImageThumbnail, inspectImage } from "./thumbnail";
 import { getProject } from "@/v2/server/projects/repository";
 import type { V2Asset } from "@/v2/assets/types";
 
@@ -68,8 +68,9 @@ export async function ingestAsset(projectId: string, file: File, source = "uploa
       const metadata = await inspectImage(target);
       width = metadata.width;
       height = metadata.height;
-      thumbnailPath = await generateImageThumbnail(target, sha256);
-      createdThumbnail = resolveV2Path(thumbnailPath);
+      const thumbnail = await ensureImageThumbnail(target, sha256);
+      thumbnailPath = thumbnail.relativePath;
+      createdThumbnail = thumbnail.created ? resolveV2Path(thumbnail.relativePath) : null;
     }
 
     return insertAsset({

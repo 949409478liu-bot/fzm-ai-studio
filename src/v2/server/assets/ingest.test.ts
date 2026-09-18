@@ -7,6 +7,7 @@ import { closeDbForTests } from "@/v2/server/db/connection";
 import { createProject } from "@/v2/server/projects/repository";
 import { assertInsideRoot } from "@/v2/server/fsUtils";
 import { ingestAsset } from "./ingest";
+import { insertAsset, listAssets } from "./repository";
 
 let dir: string;
 
@@ -60,6 +61,36 @@ describe("asset ingestion", () => {
     const second = await ingestAsset(project.id, file);
     expect(second.id).toBe(first.id);
     expect(second.path).toBe(first.path);
+  });
+
+  it("TH01-TH05 and cross-project dedup preserve shared original and thumbnail", async () => {
+    const a = createProject("A");
+    const b = createProject("B");
+    const file = await imageFile("png");
+    const first = await ingestAsset(a.id, file);
+    const second = await ingestAsset(b.id, file);
+    expect(second.id).not.toBe(first.id);
+    expect(second.path).toBe(first.path);
+    expect(second.thumbnailPath).toBe(first.thumbnailPath);
+    expect(fs.existsSync(path.join(dir, first.path))).toBe(true);
+    expect(first.thumbnailPath && fs.existsSync(path.join(dir, first.thumbnailPath))).toBe(true);
+  });
+
+  it("AP01-AP02 paginates 120 assets without duplicates and with filters", () => {
+    const project = createProject("Page");
+    for (let index = 0; index < 120; index += 1) {
+      insertAsset({ projectId: project.id, kind: index % 2 === 0 ? "image" : "video", path: `assets/images/${index}.png`, mimeType: index % 2 === 0 ? "image/png" : "video/mp4", originalName: `asset-${index}`, byteSize: 1, width: null, height: null, duration: null, sha256: `${index}`.padStart(64, "0"), thumbnailPath: null, source: "fixture" });
+    }
+    const p1 = listAssets(project.id, { limit: 50 });
+    const p2 = listAssets(project.id, { limit: 50, cursor: p1.nextCursor });
+    const p3 = listAssets(project.id, { limit: 50, cursor: p2.nextCursor });
+    const all = [...p1.assets, ...p2.assets, ...p3.assets];
+    expect([p1.assets.length, p2.assets.length, p3.assets.length]).toEqual([50, 50, 20]);
+    expect(new Set(all.map((asset) => asset.id)).size).toBe(120);
+    const images1 = listAssets(project.id, { limit: 50, kind: "image" });
+    const images2 = listAssets(project.id, { limit: 50, kind: "image", cursor: images1.nextCursor });
+    expect([...images1.assets, ...images2.assets].every((asset) => asset.kind === "image")).toBe(true);
+    expect([...images1.assets, ...images2.assets]).toHaveLength(60);
   });
 
   it("AS10 rejects path traversal", () => {

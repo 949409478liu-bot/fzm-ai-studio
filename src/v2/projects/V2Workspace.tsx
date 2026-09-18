@@ -13,6 +13,9 @@ function useProjectIdFromUrl() {
   const [projectId, setProjectId] = useState<string | null | undefined>(undefined);
   useEffect(() => {
     void Promise.resolve().then(() => setProjectId(new URL(window.location.href).searchParams.get("project")));
+    const onPopState = () => setProjectId(new URL(window.location.href).searchParams.get("project"));
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
   }, []);
   const openProject = useCallback((nextProjectId: string | null) => {
     const url = new URL(window.location.href);
@@ -24,17 +27,33 @@ function useProjectIdFromUrl() {
   return [projectId, openProject] as const;
 }
 
-function ProjectCanvas({ snapshot, onBack }: { snapshot: DomainCanvasSnapshot; onBack: () => void }) {
+function ProjectCanvas({ snapshot, onBack, onHydrated, onFlushReady }: { snapshot: DomainCanvasSnapshot; onBack: () => Promise<void>; onHydrated: (snapshot: DomainCanvasSnapshot) => void; onFlushReady: (flush: (() => Promise<"saved" | "conflict" | "failed" | "locked">) | null) => void }) {
   const [revision, setRevision] = useState(snapshot.revision);
   const [saveState, setSaveState] = useState<SaveState>("saved");
-  useCanvasPersistence({ projectId: snapshot.project.id, revision, setRevision, setSaveState });
-  return <FzmCanvas project={snapshot.project} revision={revision} saveState={saveState} onBack={onBack} onReloadLatest={() => window.location.reload()} />;
+  const persistence = useCanvasPersistence({ projectId: snapshot.project.id, revision, setRevision, setSaveState });
+  useEffect(() => {
+    onFlushReady(persistence.flushPendingSave);
+    return () => onFlushReady(null);
+  }, [onFlushReady, persistence.flushPendingSave]);
+  const reloadLatest = useCallback(async () => {
+    const latest = await getCanvas(snapshot.project.id);
+    useCanvasStore.getState().hydrateProject(snapshotToFlow(latest));
+    onHydrated(latest);
+    persistence.clearConflictLock(latest.revision);
+  }, [onHydrated, persistence, snapshot.project.id]);
+  const back = useCallback(async () => {
+    const result = await persistence.flushPendingSave();
+    if (result === "conflict" || result === "locked") return;
+    await onBack();
+  }, [onBack, persistence]);
+  return <FzmCanvas project={snapshot.project} revision={revision} saveState={saveState} onBack={back} onReloadLatest={reloadLatest} />;
 }
 
 export function V2Workspace() {
   const [projectId, openProject] = useProjectIdFromUrl();
   const [snapshot, setSnapshot] = useState<DomainCanvasSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
+  const flushCurrentRef = useState<{ current: (() => Promise<"saved" | "conflict" | "failed" | "locked">) | null }>({ current: null })[0];
 
   useEffect(() => {
     if (!projectId) {
@@ -56,7 +75,13 @@ export function V2Workspace() {
   }, [projectId]);
 
   if (projectId === undefined) return <main className="fzm-v2-shell"><div className="fzm-node-info fzm-floating" style={{ left: 24, top: 24 }}>Loading project...</div></main>;
-  if (!projectId) return <ProjectList onOpen={openProject} />;
+  const guardedOpenProject = async (nextProjectId: string | null) => {
+    const result = flushCurrentRef.current ? await flushCurrentRef.current() : "saved";
+    if (result === "conflict" || result === "locked") return;
+    openProject(nextProjectId);
+  };
+
+  if (!projectId) return <ProjectList onOpen={guardedOpenProject} />;
   if (loading || !snapshot) return <main className="fzm-v2-shell"><div className="fzm-node-info fzm-floating" style={{ left: 24, top: 24 }}>Loading project...</div></main>;
-  return <ProjectCanvas snapshot={snapshot} onBack={() => openProject(null)} />;
+  return <ProjectCanvas key={snapshot.project.id} snapshot={snapshot} onHydrated={setSnapshot} onFlushReady={(flush) => { flushCurrentRef.current = flush; }} onBack={async () => openProject(null)} />;
 }

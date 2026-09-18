@@ -17,9 +17,30 @@ const filters = ["all", "image", "video", "audio"] as const;
 export function AssetDrawer({ projectId, open, onClose, onAddToCanvas }: AssetDrawerProps) {
   const [assets, setAssets] = useState<V2Asset[]>([]);
   const [filter, setFilter] = useState<(typeof filters)[number]>("all");
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  const refresh = useCallback(async () => setAssets((await listProjectAssets(projectId, { kind: filter, limit: 50 })).assets), [filter, projectId]);
+  const refresh = useCallback(async () => {
+    const page = await listProjectAssets(projectId, { kind: filter, limit: 50 });
+    setAssets(page.assets);
+    setNextCursor(page.nextCursor);
+  }, [filter, projectId]);
+
+  const loadMore = useCallback(async () => {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const page = await listProjectAssets(projectId, { kind: filter, limit: 50, cursor: nextCursor });
+      setAssets((current) => {
+        const seen = new Set(current.map((asset) => asset.id));
+        return [...current, ...page.assets.filter((asset) => !seen.has(asset.id))];
+      });
+      setNextCursor(page.nextCursor);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [filter, loadingMore, nextCursor, projectId]);
 
   useEffect(() => {
     if (open) void Promise.resolve().then(refresh);
@@ -45,6 +66,7 @@ export function AssetDrawer({ projectId, open, onClose, onAddToCanvas }: AssetDr
           </button>
         ))}
       </div>
+      {nextCursor ? <button className="fzm-button fzm-upload-button" type="button" onClick={loadMore} disabled={loadingMore}>{loadingMore ? "Loading..." : "Load More"}</button> : null}
     </aside>
   );
 }

@@ -1,5 +1,5 @@
 import { badRequest, isUuid, notFound } from "@/v2/server/apiValidation";
-import { getCanvasSnapshot, RevisionConflictError, saveCanvasSnapshot } from "@/v2/server/projects/repository";
+import { CanvasValidationError, getCanvasSnapshot, RevisionConflictError, saveCanvasSnapshot } from "@/v2/server/projects/repository";
 import type { DomainCanvasEdge, DomainCanvasNode } from "@/v2/projects/types";
 
 export const runtime = "nodejs";
@@ -45,6 +45,7 @@ export async function PUT(request: Request, { params }: Params) {
     if (error instanceof RevisionConflictError) {
       return Response.json({ error: "revision_conflict", expectedRevision: error.expectedRevision, currentRevision: error.currentRevision }, { status: 409 });
     }
+    if (error instanceof CanvasValidationError) return badRequest(error.reason);
     if (error instanceof Error && error.message === "project_not_found") return notFound();
     throw error;
   }
