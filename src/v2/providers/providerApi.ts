@@ -1,4 +1,4 @@
-import type { ProviderDto } from "./types";
+import type { ProviderDto, ProviderEditorPayload } from "./types";
 
 async function parseJson<T>(response: Response): Promise<T> {
   const body = (await response.json()) as T;
@@ -18,6 +18,14 @@ export async function testProvider(providerId: string) {
   return parseJson<{ result: { ok: boolean; message: string; testMode: string } }>(await fetch(`/api/v2/providers/${providerId}/test`, { method: "POST" }));
 }
 
-export async function updateProvider(providerId: string, payload: { enabled?: boolean }) {
+export async function createProvider(payload: ProviderEditorPayload) {
+  return parseJson<{ provider: ProviderDto }>(await fetch("/api/v2/providers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }));
+}
+
+export async function updateProvider(providerId: string, payload: Partial<ProviderEditorPayload>) {
   return parseJson<{ provider: ProviderDto }>(await fetch(`/api/v2/providers/${providerId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }));
+}
+
+export async function deleteProvider(providerId: string) {
+  return parseJson<{ ok: boolean }>(await fetch(`/api/v2/providers/${providerId}`, { method: "DELETE" }));
 }

@@ -185,6 +185,33 @@
   padding: 12px;
 }
 
+.fzm-provider-card-head,
+.fzm-provider-editor-head,
+.fzm-provider-model-head,
+.fzm-provider-models-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.fzm-provider-card-title {
+  width: 100%;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+}
+
+.fzm-provider-card-title strong,
+.fzm-provider-card-title span,
+.fzm-provider-editor-head strong,
+.fzm-provider-editor-head span {
+  display: block;
+}
+
 .fzm-provider-card span,
 .fzm-provider-card dd,
 .fzm-provider-card dt {
@@ -202,6 +229,104 @@
 .fzm-provider-card dd {
   margin: 0;
   overflow-wrap: anywhere;
+}
+
+.fzm-provider-editor {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  border-radius: 20px;
+  background: rgba(9, 10, 18, 0.58);
+}
+
+.fzm-provider-template-row,
+.fzm-provider-capabilities,
+.fzm-provider-key-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.fzm-provider-key-row {
+  flex-wrap: nowrap;
+}
+
+.fzm-provider-field {
+  display: grid;
+  gap: 6px;
+}
+
+.fzm-provider-field span,
+.fzm-provider-toggle,
+.fzm-provider-capabilities,
+.fzm-provider-field small,
+.fzm-provider-advanced summary {
+  color: var(--fzm-muted);
+  font-size: 12px;
+}
+
+.fzm-provider-field input,
+.fzm-provider-field select {
+  width: 100%;
+  min-height: 32px;
+  border: 1px solid var(--fzm-border);
+  border-radius: 11px;
+  padding: 0 10px;
+  color: var(--fzm-text-primary);
+  background: rgba(255, 255, 255, 0.06);
+  outline: none;
+}
+
+.fzm-provider-field input:focus,
+.fzm-provider-field select:focus {
+  border-color: var(--fzm-accent-border);
+}
+
+.fzm-provider-key-row .fzm-provider-field,
+.fzm-provider-key-row input {
+  flex: 1;
+}
+
+.fzm-provider-toggle,
+.fzm-provider-capabilities label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fzm-provider-model-list {
+  display: grid;
+  gap: 10px;
+}
+
+.fzm-provider-model-card {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.fzm-provider-advanced {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 8px;
+}
+
+.fzm-provider-advanced summary {
+  cursor: pointer;
+}
+
+.fzm-provider-advanced .fzm-provider-field {
+  margin-top: 8px;
+}
+
+.fzm-provider-save {
+  border-color: var(--fzm-accent-border);
+  color: var(--fzm-text-primary);
+  background: var(--fzm-accent-soft);
 }
 
 .fzm-v2-flow {

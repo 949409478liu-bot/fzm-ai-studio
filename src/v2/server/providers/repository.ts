@@ -35,6 +35,15 @@ export function getProviderConfig(id: string, db = getDb()) {
   return row ? mapProvider(row) : null;
 }
 
+export function providerHasGenerationHistory(id: string, db = getDb()) {
+  const row = db.prepare("SELECT 1 FROM generations WHERE provider_id = ? LIMIT 1").get(id);
+  return Boolean(row);
+}
+
+export function deleteProviderConfig(id: string, db = getDb()) {
+  db.prepare("DELETE FROM provider_configs WHERE id = ?").run(id);
+}
+
 export function upsertProviderConfig(input: {
   id?: string;
   kind: ProviderKind;

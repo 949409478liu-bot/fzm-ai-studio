@@ -112,6 +112,57 @@ test("V2 durable project canvas and asset interactions", async ({ page }) => {
   await expect.poll(() => page.locator(".react-flow__node img.fzm-node-image").count()).toBeGreaterThan(1);
 });
 
+test("Provider editor creates masks refreshes and disables provider without vendor submit", async ({ page }) => {
+  const providerName = `Example Relay ${Date.now()}`;
+  await createProject(page);
+  await resetFakeStats(page);
+  await page.getByRole("button", { name: /Model\/API/ }).click();
+  await expect(page.getByLabel("Provider settings")).toBeVisible();
+  await page.getByRole("button", { name: /Add Provider/ }).click();
+  await expect(page.getByLabel("Provider Editor")).toBeVisible();
+  await page.getByLabel("Provider Name").fill(providerName);
+  await page.getByLabel("Provider Type").selectOption("openai-compatible");
+  await page.getByLabel("Base URL").fill("http://localhost:9999/v1");
+  await page.getByLabel("API Key").fill("fake-key-1234");
+  await page.getByRole("button", { name: /Add Model/ }).click();
+  await page.getByLabel("Model ID").fill("test-image-model");
+  await page.getByLabel("Display Name").fill("Test Image Model");
+  await page.getByLabel("Model 1").getByLabel("图生图").check();
+  await page.getByRole("button", { name: /Save Provider/ }).click();
+  await expect(page.getByText("Provider created")).toBeVisible();
+  const providerCard = page.locator(".fzm-provider-card").filter({ hasText: providerName });
+  await expect(providerCard).toBeVisible();
+  await expect(providerCard.getByText("****1234")).toBeVisible();
+  await page.getByLabel("Close providers").click();
+
+  await page.getByLabel("Add").click();
+  await page.getByRole("menu").getByRole("button", { name: "Image" }).click();
+  await expect(page.getByLabel("Provider")).toContainText(providerName);
+
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: /Assets/ }).click();
+  await page.locator("input[type=file]").setInputFiles({ name: "edit-source.png", mimeType: "image/png", buffer: Buffer.from(pngBase64, "base64") });
+  await expect(page.locator(".fzm-asset-card img")).toBeVisible();
+  await page.locator(".fzm-asset-card").first().dblclick();
+  await page.getByLabel("Close assets").click();
+  const source = await page.locator(".fzm-handle--output").first().boundingBox();
+  expect(source).not.toBeNull();
+  await page.mouse.move(source!.x + source!.width / 2, source!.y + source!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(source!.x + 260, source!.y + 120, { steps: 12 });
+  await page.mouse.up();
+  await page.getByRole("menu", { name: "Image actions" }).getByRole("button", { name: /编辑图片/ }).click();
+  await expect(page.getByLabel("Provider")).toContainText(providerName);
+
+  await page.getByRole("button", { name: /Model\/API/ }).click();
+  await page.locator(".fzm-provider-card").filter({ hasText: providerName }).first().getByRole("button", { name: "Disable" }).click();
+  await page.getByLabel("Close providers").click();
+  await page.getByLabel("Add").click();
+  await page.getByRole("menu").getByRole("button", { name: "Image" }).click();
+  await expect(page.getByLabel("Provider")).not.toContainText(providerName);
+  expect(Object.values(await fakeStats(page)).reduce((sum, value) => sum + value, 0)).toBe(0);
+});
+
 test("Phase 4 PromptBar generates image result with fake provider", async ({ page }) => {
   await createProject(page);
   await seedFakeProvider(page);

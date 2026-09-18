@@ -1,6 +1,7 @@
 import { badRequest, notFound } from "@/v2/server/apiValidation";
-import { getProviderConfig, upsertProviderConfig } from "@/v2/server/providers/repository";
+import { deleteProviderConfig, getProviderConfig, providerHasGenerationHistory, providerToClientDto, upsertProviderConfig } from "@/v2/server/providers/repository";
 import { getProviderRegistry } from "@/v2/server/providers/registry";
+import { normalizeEditableProviderPayload, toProviderValidationResponse } from "@/v2/server/providers/providerValidation";
 
 export const runtime = "nodejs";
 
@@ -10,16 +11,22 @@ export async function PATCH(request: Request, { params }: Params) {
   const { providerId } = await params;
   const existing = getProviderConfig(providerId);
   if (!existing) return notFound();
-  const body = (await request.json().catch(() => null)) as null | { name?: unknown; enabled?: unknown; baseUrl?: unknown; apiKey?: unknown };
+  const body = (await request.json().catch(() => null)) as null | Record<string, unknown>;
   if (!body) return badRequest("invalid_provider_payload");
-  const provider = upsertProviderConfig({
-    id: providerId,
-    kind: existing.kind,
-    name: typeof body.name === "string" ? body.name.slice(0, 80) : existing.name,
-    enabled: typeof body.enabled === "boolean" ? body.enabled : existing.enabled,
-    config: { ...existing.config, ...(typeof body.baseUrl === "string" ? { baseUrl: body.baseUrl } : {}) },
-    secret: typeof body.apiKey === "string" && body.apiKey ? { ...existing.secret, apiKey: body.apiKey } : existing.secret,
-  });
-  const models = await getProviderRegistry().listModels(provider);
-  return Response.json({ provider: (await getProviderRegistry().listClientProviders()).find((item) => item.id === provider.id) ?? { id: provider.id, models } });
+  try {
+    const input = normalizeEditableProviderPayload({ ...existing.config, ...body, kind: body.kind ?? existing.kind, name: body.name ?? existing.name, enabled: body.enabled ?? existing.enabled, baseUrl: body.baseUrl ?? existing.config.baseUrl }, existing);
+    const provider = upsertProviderConfig({ id: providerId, ...input });
+    return Response.json({ provider: providerToClientDto(provider, await getProviderRegistry().listModels(provider)) });
+  } catch (error) {
+    return toProviderValidationResponse(error);
+  }
+}
+
+export async function DELETE(_: Request, { params }: Params) {
+  const { providerId } = await params;
+  const existing = getProviderConfig(providerId);
+  if (!existing) return notFound();
+  if (providerHasGenerationHistory(providerId)) return Response.json({ error: "provider_in_use" }, { status: 409 });
+  deleteProviderConfig(providerId);
+  return Response.json({ ok: true });
 }

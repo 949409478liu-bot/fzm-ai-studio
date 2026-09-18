@@ -18,3 +18,23 @@ export interface ProviderDto {
   capabilities: ProviderCapability[];
   status: string;
 }
+
+export type EditableProviderKind = "openai-compatible" | "gptsapi" | "moyu" | "gemini-native" | "custom";
+
+export interface ProviderModelEditorValue {
+  id: string;
+  label: string;
+  capabilities: Array<"image.generate" | "image.edit">;
+  modelFamily?: "openai" | "google";
+  protocol?: "openai-images" | "gemini-native";
+  authMode?: "auto" | "bearer" | "google-api-key";
+}
+
+export interface ProviderEditorPayload {
+  name: string;
+  kind: EditableProviderKind;
+  enabled: boolean;
+  baseUrl: string;
+  apiKey?: string;
+  models: ProviderModelEditorValue[];
+}
