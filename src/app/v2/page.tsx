@@ -1,5 +1,5 @@
-import { FzmCanvas } from "@/v2/canvas/FzmCanvas";
+import { V2Workspace } from "@/v2/projects/V2Workspace";
 
 export default function V2Page() {
-  return <FzmCanvas />;
+  return <V2Workspace />;
 }

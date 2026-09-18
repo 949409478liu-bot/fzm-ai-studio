@@ -1,6 +1,6 @@
 import type { NodeChange } from "@xyflow/react";
 import { applyNodeChanges } from "@xyflow/react";
-import type { V2FlowEdge, V2FlowNode, V2NodeKind } from "@/v2/types/canvas";
+import type { V2FlowEdge, V2FlowNode, V2NodeData, V2NodeKind } from "@/v2/types/canvas";
 
 let idCounter = 0;
 
@@ -14,9 +14,8 @@ export function createEdgeId(source: string, target: string): string {
   return `v2-edge-${source}-${target}-${idCounter}`;
 }
 
-export function createCanvasNode(kind: V2NodeKind, x: number, y: number): V2FlowNode {
-  const width = kind === "group" ? 420 : kind === "text" ? 300 : 320;
-  const height = kind === "group" ? 280 : kind === "text" ? 190 : 250;
+export function createCanvasNode(kind: V2NodeKind, x: number, y: number, data: Partial<V2NodeData> = {}): V2FlowNode {
+  const { width, height } = getNodeSize(kind);
   const title = kind === "text" ? "Text" : kind === "image" ? "Image" : kind === "video" ? "Video" : "Group";
   return {
     id: createNodeId(kind),
@@ -25,7 +24,14 @@ export function createCanvasNode(kind: V2NodeKind, x: number, y: number): V2Flow
     dragHandle: ".drag-handle",
     width,
     height,
-    data: { kind, title, body: kind === "text" ? "Write a prompt, note, or direction..." : undefined },
+    data: { kind, title, body: kind === "text" ? "Write a prompt, note, or direction..." : undefined, ...data },
+  };
+}
+
+export function getNodeSize(kind: V2NodeKind): { width: number; height: number } {
+  return {
+    width: kind === "group" ? 420 : kind === "text" ? 300 : 320,
+    height: kind === "group" ? 280 : kind === "text" ? 190 : 250,
   };
 }
 

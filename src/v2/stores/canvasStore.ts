@@ -4,7 +4,7 @@ import { create } from "zustand";
 import { canConnect } from "@/v2/canvas/graph/canConnect";
 import { applyPositionChanges, createCanvasEdge, createCanvasNode, duplicateNode, makeHundredNodeFixture } from "@/v2/canvas/graph/graphUtils";
 import { cloneSnapshot, createHistoryState, pushHistory, redoHistory, undoHistory } from "@/v2/stores/canvasHistory";
-import type { CanvasHistoryState, CanvasTool, V2FlowEdge, V2FlowNode, V2NodeKind } from "@/v2/types/canvas";
+import type { CanvasHistoryState, CanvasTool, V2FlowEdge, V2FlowNode, V2NodeData, V2NodeKind } from "@/v2/types/canvas";
 
 interface CanvasStoreState {
   history: CanvasHistoryState;
@@ -23,7 +23,7 @@ interface CanvasStoreState {
   onEdgesChange: (changes: EdgeChange<V2FlowEdge>[]) => void;
   beginDrag: () => void;
   endDrag: () => void;
-  addNode: (kind: V2NodeKind, x: number, y: number) => V2FlowNode;
+  addNode: (kind: V2NodeKind, x: number, y: number, data?: Partial<V2NodeData>) => V2FlowNode;
   addEdgeFromConnection: (connection: Connection) => boolean;
   addEdgeByIds: (source: string, target: string) => boolean;
   duplicateNodeById: (nodeId: string) => void;
@@ -34,6 +34,7 @@ interface CanvasStoreState {
   undo: () => void;
   redo: () => void;
   seedHundredNodes: () => void;
+  hydrateProject: (snapshot: { nodes: V2FlowNode[]; edges: V2FlowEdge[]; viewport: Viewport }) => void;
 }
 
 function currentSnapshot(state: CanvasStoreState) {
@@ -85,8 +86,8 @@ export const useCanvasStore = create<CanvasStoreState>((set, get) => ({
       };
     }),
 
-  addNode: (kind, x, y) => {
-    const node = createCanvasNode(kind, x, y);
+  addNode: (kind, x, y, data) => {
+    const node = createCanvasNode(kind, x, y, data);
     set((state) => {
       const snapshot = currentSnapshot(state);
       return withHistory(state, [...snapshot.nodes, node], snapshot.edges);
@@ -146,6 +147,7 @@ export const useCanvasStore = create<CanvasStoreState>((set, get) => ({
   undo: () => set((state) => ({ history: undoHistory(state.history), selectedNodeIds: [], selectedEdgeIds: [] })),
   redo: () => set((state) => ({ history: redoHistory(state.history), selectedNodeIds: [], selectedEdgeIds: [] })),
   seedHundredNodes: () => set((state) => ({ history: pushHistory(state.history, makeHundredNodeFixture()) })),
+  hydrateProject: (snapshot) => set({ history: createHistoryState({ nodes: snapshot.nodes, edges: snapshot.edges }), viewport: snapshot.viewport, selectedNodeIds: [], selectedEdgeIds: [], dragStartSnapshot: null }),
 }));
 
 export const selectCanvasNodes = (state: CanvasStoreState) => state.history.present.nodes;

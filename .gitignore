@@ -37,6 +37,7 @@ yarn-error.log*
 # provider configs (contains API keys)
 data/provider-configs.json
 data/*.key
+data/v2/
 
 # vercel
 .vercel

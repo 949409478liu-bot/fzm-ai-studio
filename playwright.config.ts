@@ -1,4 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
+import os from "node:os";
+import path from "node:path";
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -11,6 +13,7 @@ export default defineConfig({
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
     command: "npm run dev -- --port 3200",
+    env: { FZM_V2_DATA_DIR: path.join(os.tmpdir(), "fzm-v2-playwright") },
     url: "http://localhost:3200/v2",
     reuseExistingServer: true,
     timeout: 120_000,
