@@ -74,7 +74,7 @@ export type ProviderSubmission =
 
 export type ProviderPollResult =
   | { status: "pending"; progress?: number; nextPollMs?: number; ticket?: Record<string, unknown> }
-  | { status: "succeeded"; ticket?: Record<string, unknown> }
+  | { status: "succeeded"; ticket?: Record<string, unknown>; outputs?: FetchedProviderOutput[] }
   | { status: "failed"; error: string };
 
 export interface ProviderTestResult {

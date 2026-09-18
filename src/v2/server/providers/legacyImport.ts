@@ -10,8 +10,14 @@ function mapCapability(value: string) {
   return null;
 }
 
-function classifyProvider(config: { id: string; name: string; type?: string; baseUrl?: string }): { kind: ProviderKind; enabled: boolean; warning?: string } {
+type LegacyModel = { endpointMode?: string; providerPath?: string; name?: string; label?: string };
+
+function classifyProvider(config: { id: string; name: string; type?: string; baseUrl?: string; models?: LegacyModel[] }): { kind: ProviderKind; enabled: boolean; warning?: string } {
   const type = String(config.type || "").toLowerCase();
+  const models = config.models ?? [];
+  if (models.some((model) => model.endpointMode === "gptsapi-v3-image" || model.providerPath === "google" || model.providerPath === "openai" && String(config.baseUrl || "").includes("gptsapi"))) return { kind: "gptsapi", enabled: true };
+  const baseUrl = String(config.baseUrl || "").toLowerCase();
+  if (type === "moyu" || baseUrl.includes("moyu.info") || models.some((model) => ["gpt-image-2", "gemini-3-pro-image-preview"].includes(String(model.name)) && (model.endpointMode === "openai-images" || model.endpointMode === "gemini-native"))) return { kind: "moyu", enabled: true };
   if (type === "gemini") return { kind: "gemini-native", enabled: true };
   if (type === "openai-compatible") return { kind: "openai-compatible", enabled: true };
   if (type === "openai") return { kind: "openai-compatible", enabled: true };
@@ -30,14 +36,15 @@ export function importLegacyProviders(options: { overwrite?: boolean } = {}) {
       imported.push({ id: existing.id, status: "skipped-existing", kind: existing.kind });
       continue;
     }
-    const classification = classifyProvider({ id: runtime.id, name: runtime.name, type: runtime.type, baseUrl: runtime.baseUrl });
+    const legacyModels = (runtime.models || []).map((model) => model as unknown as LegacyModel);
+    const classification = classifyProvider({ id: runtime.id, name: runtime.name, type: runtime.type, baseUrl: runtime.baseUrl, models: legacyModels });
     const capabilities = (runtime.capabilities || []).map(String).map(mapCapability).filter(Boolean);
     const models = (runtime.models || []).map((model) => ({
       id: model.name,
       label: model.label || model.name,
       capabilities: (model.capabilities || []).map(String).map(mapCapability).filter(Boolean),
-      internal: { endpointMode: (model as unknown as Record<string, unknown>).endpointMode, providerPath: (model as unknown as Record<string, unknown>).providerPath },
-    }));
+      internal: mapInternal(classification.kind, model as unknown as LegacyModel),
+    })).filter((model) => model.id && model.capabilities.length > 0);
     const provider = upsertProviderConfig({
       id: runtime.id,
       kind: classification.kind,
@@ -50,4 +57,11 @@ export function importLegacyProviders(options: { overwrite?: boolean } = {}) {
     imported.push({ id: provider.id, status: existing ? "overwritten" : "imported", kind: provider.kind, warning: classification.warning });
   }
   return imported;
+}
+
+function mapInternal(kind: ProviderKind, model: LegacyModel) {
+  if (kind === "gptsapi") return { providerPath: model.providerPath || "openai" };
+  if (kind === "moyu") return { protocol: model.endpointMode === "gemini-native" ? "gemini-native" : "openai-images", authMode: model.endpointMode === "gemini-native" ? "bearer" : undefined };
+  if (kind === "gemini-native") return { protocol: "gemini-native", authMode: "bearer" };
+  return {};
 }

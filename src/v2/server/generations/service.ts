@@ -10,6 +10,7 @@ import type { ProviderCapability, ResolvedGenerationReference } from "@/v2/serve
 import { getGenerationByRequest, insertGeneration } from "./repository";
 import { getJobByGeneration, insertJob, upsertNodeExecutionState } from "@/v2/server/jobs/repository";
 import { ensureJobSchedulerStarted } from "@/v2/server/jobs/scheduler";
+import { getProject } from "@/v2/server/projects/repository";
 
 async function resolveReferences(projectId: string, refs: Array<{ assetId: string; role: string; order: number }>): Promise<ResolvedGenerationReference[]> {
   const resolved = [];
@@ -27,6 +28,7 @@ export async function resolveGenerationReferences(projectId: string, refs: Array
 }
 
 export async function createGenerationJob(projectId: string, input: { requestId: string; nodeId: string | null; action: ProviderCapability; providerId: string; modelId: string; prompt: string; references: Array<{ assetId: string; role: string; order: number }>; params: Record<string, unknown> }) {
+  if (!getProject(projectId)) throw new ProviderValidationError("project_not_found");
   const existing = getGenerationByRequest(projectId, input.requestId);
   if (existing) return { generation: existing, job: getJobByGeneration(existing.id)! };
 
@@ -35,15 +37,24 @@ export async function createGenerationJob(projectId: string, input: { requestId:
   await resolveReferences(projectId, input.references);
 
   const db = getDb();
-  const result = db.transaction(() => {
-    const nodeExists = input.nodeId ? db.prepare("SELECT id FROM nodes WHERE id = ? AND project_id = ?").get(input.nodeId, projectId) : null;
-    if (input.nodeId && !nodeExists) throw new ProviderValidationError("node_not_found");
-    const generation = insertGeneration({ projectId, nodeId: input.nodeId, requestId: input.requestId, action: input.action, providerId: input.providerId, modelId: input.modelId, prompt: input.prompt, references: input.references, params: input.params }, db);
-    const executionToken = randomUUID();
-    const job = insertJob({ generationId: generation.id, projectId, nodeId: input.nodeId, executionToken, providerId: input.providerId, modelId: input.modelId, deadlineAt: new Date(Date.now() + 15 * 60 * 1000).toISOString() }, db);
-    if (input.nodeId) upsertNodeExecutionState({ projectId, nodeId: input.nodeId, executionToken, jobId: job.id }, db);
-    return { generation, job };
-  })();
+  let result;
+  try {
+    result = db.transaction(() => {
+      const nodeExists = input.nodeId ? db.prepare("SELECT id FROM nodes WHERE id = ? AND project_id = ?").get(input.nodeId, projectId) : null;
+      if (input.nodeId && !nodeExists) throw new ProviderValidationError("node_not_found");
+      const generation = insertGeneration({ projectId, nodeId: input.nodeId, requestId: input.requestId, action: input.action, providerId: input.providerId, modelId: input.modelId, prompt: input.prompt, references: input.references, params: input.params }, db);
+      const executionToken = randomUUID();
+      const job = insertJob({ generationId: generation.id, projectId, nodeId: input.nodeId, executionToken, providerId: input.providerId, modelId: input.modelId, deadlineAt: new Date(Date.now() + 15 * 60 * 1000).toISOString() }, db);
+      if (input.nodeId) upsertNodeExecutionState({ projectId, nodeId: input.nodeId, executionToken, jobId: job.id }, db);
+      return { generation, job };
+    })();
+  } catch (error) {
+    if (error instanceof Error && /UNIQUE constraint failed/i.test(error.message)) {
+      const duplicate = getGenerationByRequest(projectId, input.requestId);
+      if (duplicate) return { generation: duplicate, job: getJobByGeneration(duplicate.id)! };
+    }
+    throw error;
+  }
   ensureJobSchedulerStarted();
   return result;
 }

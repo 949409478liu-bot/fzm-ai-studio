@@ -3,6 +3,7 @@ import type Database from "better-sqlite3";
 import fs from "node:fs";
 import { migration001Initial } from "./migrations/001_initial";
 import { migration002ProviderJobs } from "./migrations/002_provider_jobs";
+import { migration003JobRecoveryState } from "./migrations/003_job_recovery_state";
 
 interface Migration {
   version: number;
@@ -13,6 +14,7 @@ interface Migration {
 const migrations: Migration[] = [
   { version: 1, name: "initial", up: migration001Initial },
   { version: 2, name: "provider_jobs", up: migration002ProviderJobs },
+  { version: 3, name: "job_recovery_state", up: migration003JobRecoveryState },
 ];
 
 function backupBeforeSchema2(dbPath?: string) {
@@ -38,7 +40,7 @@ export function migrateDatabase(db: Database.Database, dbPath?: string) {
 
   for (const migration of migrations) {
     if (applied.has(migration.version)) continue;
-    if (migration.version === 2) backupBeforeSchema2(dbPath);
+    if (migration.version === 2 || migration.version === 3) backupBeforeSchema2(dbPath);
     const run = db.transaction(() => {
       migration.up(db);
       db.prepare("INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)").run(

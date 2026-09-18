@@ -1,4 +1,4 @@
-import { badRequest, isUuid } from "@/v2/server/apiValidation";
+import { badRequest, isUuid, notFound } from "@/v2/server/apiValidation";
 import { createGenerationJob } from "@/v2/server/generations/service";
 import { validateGenerationPayload } from "@/v2/server/generations/validation";
 import { ProviderValidationError, redactProviderError } from "@/v2/server/providers/errors";
@@ -15,6 +15,7 @@ export async function POST(request: Request, { params }: Params) {
     const result = await createGenerationJob(projectId, input);
     return Response.json(result, { status: 202 });
   } catch (error) {
+    if (error instanceof ProviderValidationError && error.message === "project_not_found") return notFound();
     if (error instanceof ProviderValidationError) return badRequest(error.message);
     return Response.json({ error: redactProviderError(error) }, { status: 500 });
   }
