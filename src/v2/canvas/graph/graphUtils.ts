@@ -35,8 +35,8 @@ export function getNodeSize(kind: V2NodeKind): { width: number; height: number }
   };
 }
 
-export function createCanvasEdge(source: string, target: string): V2FlowEdge {
-  return { id: createEdgeId(source, target), source, target, type: "fzm", data: { status: "ready" } };
+export function createCanvasEdge(source: string, target: string, role = "reference-image"): V2FlowEdge {
+  return { id: createEdgeId(source, target), source, target, type: "fzm", data: { status: "ready", role } };
 }
 
 export function duplicateNode(node: V2FlowNode): V2FlowNode {

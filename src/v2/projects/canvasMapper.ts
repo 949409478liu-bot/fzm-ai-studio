@@ -19,6 +19,7 @@ function sanitizeData(data: Record<string, unknown>): Record<string, unknown> {
 export function flowNodeToDomain(node: V2FlowNode): DomainCanvasNode {
   const data = sanitizeData(node.data);
   delete data.assetId;
+  delete data.generationId;
   return {
     id: node.id,
     type: node.data.kind,
@@ -27,7 +28,7 @@ export function flowNodeToDomain(node: V2FlowNode): DomainCanvasNode {
     width: node.width ?? 320,
     height: node.height ?? 240,
     assetId: typeof node.data.assetId === "string" ? node.data.assetId : null,
-    generationId: null,
+    generationId: typeof node.data.generationId === "string" ? node.data.generationId : null,
     data,
   };
 }
@@ -43,7 +44,7 @@ export function flowEdgeToDomain(edge: V2FlowEdge): DomainCanvasEdge {
 }
 
 export function domainNodeToFlow(node: DomainCanvasNode): V2FlowNode {
-  const data = { ...node.data, kind: node.type, assetId: node.assetId ?? undefined } as V2NodeData;
+  const data = { ...node.data, kind: node.type, assetId: node.assetId ?? undefined, generationId: node.generationId ?? undefined } as V2NodeData;
   return {
     id: node.id,
     type: node.type,
@@ -61,7 +62,7 @@ export function domainEdgeToFlow(edge: DomainCanvasEdge): V2FlowEdge {
     source: edge.sourceNodeId,
     target: edge.targetNodeId,
     type: "fzm",
-    data: { status: edge.status as FlowEdgeStatus },
+    data: { status: edge.status as FlowEdgeStatus, role: edge.role ?? undefined },
   };
 }
 

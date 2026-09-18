@@ -7,12 +7,14 @@ import { gptsapiAdapter } from "./adapters/gptsapi";
 import { moyuAdapter } from "./adapters/moyu";
 import { geminiNativeAdapter } from "./adapters/geminiNative";
 import { openAiCompatibleAdapter } from "./adapters/openaiCompatible";
+import { fakeAdapter } from "./adapters/fake";
 
 const adapters = new Map<ProviderKind, ProviderAdapter>([
   ["gptsapi", gptsapiAdapter],
   ["moyu", moyuAdapter],
   ["gemini-native", geminiNativeAdapter],
   ["openai-compatible", openAiCompatibleAdapter],
+  ["custom", fakeAdapter],
 ]);
 
 export class ProviderRegistry {

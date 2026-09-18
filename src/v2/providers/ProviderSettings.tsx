@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { KeyRound, RefreshCw, TestTube2, X } from "lucide-react";
-import { importV1Providers, listProviders, testProvider, updateProvider } from "./providerApi";
-import type { ProviderDto } from "./types";
+import { importV1Providers, testProvider, updateProvider } from "./providerApi";
+import { useProviderStore } from "./providerStore";
 
 interface ProviderSettingsProps {
   open: boolean;
@@ -11,19 +11,14 @@ interface ProviderSettingsProps {
 }
 
 export function ProviderSettings({ open, onClose }: ProviderSettingsProps) {
-  const [providers, setProviders] = useState<ProviderDto[]>([]);
+  const providers = useProviderStore((state) => state.providers);
+  const refreshProviders = useProviderStore((state) => state.refresh);
+  const loading = useProviderStore((state) => state.loading);
   const [message, setMessage] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
 
   const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      const body = await listProviders();
-      setProviders(body.providers);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    await refreshProviders();
+  }, [refreshProviders]);
 
   useEffect(() => { if (open) void Promise.resolve().then(refresh); }, [open, refresh]);
   if (!open) return null;

@@ -1,0 +1,44 @@
+"use client";
+
+import type { GenerationRecordDto, JobDto, SubmitGenerationInput } from "./types";
+
+async function parseJson<T>(response: Response): Promise<T> {
+  const body = (await response.json()) as T;
+  if (!response.ok) throw Object.assign(new Error("request_failed"), { response, body });
+  return body;
+}
+
+export async function createGeneration(input: SubmitGenerationInput & { requestId: string }) {
+  return parseJson<{ generation: GenerationRecordDto; job: JobDto }>(await fetch(`/api/v2/projects/${input.projectId}/generations`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) }));
+}
+
+export async function getJob(jobId: string) {
+  return parseJson<{ job: JobDto }>(await fetch(`/api/v2/jobs/${jobId}`, { cache: "no-store" }));
+}
+
+export async function cancelJob(jobId: string) {
+  return parseJson<{ job: JobDto }>(await fetch(`/api/v2/jobs/${jobId}/cancel`, { method: "POST" }));
+}
+
+export async function listProjectJobs(projectId: string, status?: string) {
+  const suffix = status ? `?status=${encodeURIComponent(status)}` : "";
+  return parseJson<{ jobs: JobDto[]; nextCursor: string | null }>(await fetch(`/api/v2/projects/${projectId}/jobs${suffix}`, { cache: "no-store" }));
+}
+
+export async function getGeneration(generationId: string) {
+  return parseJson<{ generation: GenerationRecordDto }>(await fetch(`/api/v2/generations/${generationId}`, { cache: "no-store" }));
+}
+
+export async function listGenerations(projectId: string, options: { nodeId?: string; status?: string; limit?: number; cursor?: string | null } = {}) {
+  const params = new URLSearchParams();
+  if (options.nodeId) params.set("nodeId", options.nodeId);
+  if (options.status) params.set("status", options.status);
+  if (options.limit) params.set("limit", String(options.limit));
+  if (options.cursor) params.set("cursor", options.cursor);
+  const query = params.size ? `?${params.toString()}` : "";
+  return parseJson<{ generations: GenerationRecordDto[]; nextCursor: string | null }>(await fetch(`/api/v2/projects/${projectId}/generations${query}`, { cache: "no-store" }));
+}
+
+export async function selectGenerationVariant(generationId: string, selectedVariantIndex: number) {
+  return parseJson<{ generation: GenerationRecordDto; assetId: string | null; revision: number | null }>(await fetch(`/api/v2/generations/${generationId}/selection`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ selectedVariantIndex }) }));
+}

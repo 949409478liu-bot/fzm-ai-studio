@@ -8,6 +8,7 @@ export interface V2NodeData extends Record<string, unknown> {
   title: string;
   body?: string;
   assetId?: string;
+  generationId?: string;
   originalName?: string;
   mimeType?: string;
 }

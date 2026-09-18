@@ -25,11 +25,15 @@ interface CanvasStoreState {
   endDrag: () => void;
   addNode: (kind: V2NodeKind, x: number, y: number, data?: Partial<V2NodeData>) => V2FlowNode;
   addEdgeFromConnection: (connection: Connection) => boolean;
-  addEdgeByIds: (source: string, target: string) => boolean;
+  addEdgeByIds: (source: string, target: string, role?: string) => boolean;
+  updateNodeGenerationResult: (nodeId: string, assetId: string, generationId: string) => void;
+  updateGenerationSelection: (nodeId: string, assetId: string, generationId: string) => void;
+  updateConnectedEdgeStatus: (targetNodeId: string, status: NonNullable<V2FlowEdge["data"]>["status"]) => void;
   duplicateNodeById: (nodeId: string) => void;
   duplicateSelected: () => void;
   deleteSelected: () => void;
   disconnectNode: (nodeId: string) => void;
+  removeEdgeById: (edgeId: string) => void;
   updateNodeBody: (nodeId: string, body: string) => void;
   undo: () => void;
   redo: () => void;
@@ -95,14 +99,36 @@ export const useCanvasStore = create<CanvasStoreState>((set, get) => ({
     return node;
   },
 
-  addEdgeFromConnection: (connection) => get().addEdgeByIds(connection.source ?? "", connection.target ?? ""),
-  addEdgeByIds: (source, target) => {
+  addEdgeFromConnection: (connection) => get().addEdgeByIds(connection.source ?? "", connection.target ?? "", "reference-image"),
+  addEdgeByIds: (source, target, role = "reference-image") => {
     const state = get();
     const snapshot = currentSnapshot(state);
     if (!canConnect(snapshot.edges, { source, target }).ok) return false;
-    set(withHistory(state, snapshot.nodes, [...snapshot.edges, createCanvasEdge(source, target)]));
+    set(withHistory(state, snapshot.nodes, [...snapshot.edges, createCanvasEdge(source, target, role)]));
     return true;
   },
+
+  updateNodeGenerationResult: (nodeId, assetId, generationId) =>
+    set((state) => {
+      const snapshot = currentSnapshot(state);
+      const nodes = snapshot.nodes.map((node) => (node.id === nodeId ? { ...node, data: { ...node.data, assetId, generationId, title: node.data.title || "Image" } } : node));
+      const edges = snapshot.edges.map((edge) => (edge.target === nodeId ? { ...edge, data: { ...edge.data, status: "ready" as const } } : edge));
+      return { history: { ...state.history, present: { ...snapshot, nodes, edges } } };
+    }),
+
+  updateGenerationSelection: (nodeId, assetId, generationId) =>
+    set((state) => {
+      const snapshot = currentSnapshot(state);
+      const nodes = snapshot.nodes.map((node) => (node.id === nodeId ? { ...node, data: { ...node.data, assetId, generationId } } : node));
+      return { history: { ...state.history, present: { ...snapshot, nodes } } };
+    }),
+
+  updateConnectedEdgeStatus: (targetNodeId, status) =>
+    set((state) => {
+      const snapshot = currentSnapshot(state);
+      const edges = snapshot.edges.map((edge) => (edge.target === targetNodeId ? { ...edge, data: { ...edge.data, status } } : edge)) as V2FlowEdge[];
+      return { history: { ...state.history, present: { ...snapshot, edges } } };
+    }),
 
   duplicateNodeById: (nodeId) =>
     set((state) => {
@@ -135,6 +161,12 @@ export const useCanvasStore = create<CanvasStoreState>((set, get) => ({
     set((state) => {
       const snapshot = currentSnapshot(state);
       return withHistory(state, snapshot.nodes, snapshot.edges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
+    }),
+
+  removeEdgeById: (edgeId) =>
+    set((state) => {
+      const snapshot = currentSnapshot(state);
+      return withHistory(state, snapshot.nodes, snapshot.edges.filter((edge) => edge.id !== edgeId));
     }),
 
   updateNodeBody: (nodeId, body) =>

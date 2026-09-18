@@ -43,7 +43,7 @@ function ProjectCanvas({ snapshot, onBack, onHydrated, onFlushReady }: { snapsho
     if (result !== "saved") return;
     await onBack();
   }, [onBack, persistence]);
-  return <FzmCanvas project={snapshot.project} revision={revision} saveState={saveState} onBack={back} onReloadLatest={reloadLatest} />;
+  return <FzmCanvas project={snapshot.project} revision={revision} saveState={saveState} onBack={back} onReloadLatest={reloadLatest} onServerRevision={setRevision} onFlushPendingSave={persistence.flushPendingSave} />;
 }
 
 export function V2Workspace() {
