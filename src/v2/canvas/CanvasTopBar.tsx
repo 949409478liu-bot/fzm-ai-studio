@@ -7,10 +7,11 @@ interface CanvasTopBarProps {
   revision: number;
   onBack: () => void;
   onAssets: () => void;
+  onProviders: () => void;
   onReloadLatest: () => void;
 }
 
-export function CanvasTopBar({ onMessage, projectName, saveState, revision, onBack, onAssets, onReloadLatest }: CanvasTopBarProps) {
+export function CanvasTopBar({ projectName, saveState, revision, onBack, onAssets, onProviders, onReloadLatest }: CanvasTopBarProps) {
   const status = saveState === "saved" ? "Saved" : saveState === "saving" ? "Saving..." : saveState === "conflict" ? "Conflict" : saveState === "failed" ? "Save failed" : "Local changes";
   return (
     <header className="fzm-topbar fzm-floating">
@@ -25,7 +26,7 @@ export function CanvasTopBar({ onMessage, projectName, saveState, revision, onBa
         {saveState === "conflict" ? <button className="fzm-button" type="button" onClick={onReloadLatest}>Reload latest</button> : null}
       </div>
       <nav className="fzm-topbar__right" aria-label="V2 placeholders">
-        <button className="fzm-button" type="button" onClick={() => onMessage("Provider integration begins in Phase 3")}> <KeyRound size={14} /> Model/API</button>
+        <button className="fzm-button" type="button" onClick={onProviders}> <KeyRound size={14} /> Model/API</button>
         <button className="fzm-button" type="button" onClick={onAssets}> <Database size={14} /> Assets</button>
         <button className="fzm-button" type="button" disabled><Film size={14} /> Timeline</button>
         <button className="fzm-button" type="button" disabled><Sparkles size={14} /> Agent</button>

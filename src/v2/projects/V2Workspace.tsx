@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { snapshotToFlow } from "./canvasMapper";
 import { getCanvas } from "./projectApi";
 import { ProjectList } from "./ProjectList";
@@ -13,9 +13,6 @@ function useProjectIdFromUrl() {
   const [projectId, setProjectId] = useState<string | null | undefined>(undefined);
   useEffect(() => {
     void Promise.resolve().then(() => setProjectId(new URL(window.location.href).searchParams.get("project")));
-    const onPopState = () => setProjectId(new URL(window.location.href).searchParams.get("project"));
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
   }, []);
   const openProject = useCallback((nextProjectId: string | null) => {
     const url = new URL(window.location.href);
@@ -24,7 +21,7 @@ function useProjectIdFromUrl() {
     window.history.pushState({}, "", url);
     setProjectId(nextProjectId);
   }, []);
-  return [projectId, openProject] as const;
+  return [projectId, openProject, setProjectId] as const;
 }
 
 function ProjectCanvas({ snapshot, onBack, onHydrated, onFlushReady }: { snapshot: DomainCanvasSnapshot; onBack: () => Promise<void>; onHydrated: (snapshot: DomainCanvasSnapshot) => void; onFlushReady: (flush: (() => Promise<"saved" | "conflict" | "failed" | "locked">) | null) => void }) {
@@ -43,17 +40,46 @@ function ProjectCanvas({ snapshot, onBack, onHydrated, onFlushReady }: { snapsho
   }, [onHydrated, persistence, snapshot.project.id]);
   const back = useCallback(async () => {
     const result = await persistence.flushPendingSave();
-    if (result === "conflict" || result === "locked") return;
+    if (result !== "saved") return;
     await onBack();
   }, [onBack, persistence]);
   return <FzmCanvas project={snapshot.project} revision={revision} saveState={saveState} onBack={back} onReloadLatest={reloadLatest} />;
 }
 
 export function V2Workspace() {
-  const [projectId, openProject] = useProjectIdFromUrl();
+  const [projectId, openProject, setProjectIdFromUrl] = useProjectIdFromUrl();
   const [snapshot, setSnapshot] = useState<DomainCanvasSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
-  const flushCurrentRef = useState<{ current: (() => Promise<"saved" | "conflict" | "failed" | "locked">) | null }>({ current: null })[0];
+  const flushCurrentRef = useRef<(() => Promise<"saved" | "conflict" | "failed" | "locked">) | null>(null);
+  const projectIdRef = useRef<string | null | undefined>(projectId);
+
+  useEffect(() => {
+    projectIdRef.current = projectId;
+  }, [projectId]);
+
+  const restoreCurrentUrl = useCallback(() => {
+    const url = new URL(window.location.href);
+    const current = projectIdRef.current;
+    if (current) url.searchParams.set("project", current);
+    else url.searchParams.delete("project");
+    window.history.pushState({}, "", url);
+  }, []);
+
+  useEffect(() => {
+    const onPopState = () => {
+      const nextProjectId = new URL(window.location.href).searchParams.get("project");
+      void Promise.resolve().then(async () => {
+        const result = flushCurrentRef.current ? await flushCurrentRef.current() : "saved";
+        if (result !== "saved") {
+          restoreCurrentUrl();
+          return;
+        }
+        setProjectIdFromUrl(nextProjectId);
+      });
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [restoreCurrentUrl, setProjectIdFromUrl]);
 
   useEffect(() => {
     if (!projectId) {
@@ -77,7 +103,7 @@ export function V2Workspace() {
   if (projectId === undefined) return <main className="fzm-v2-shell"><div className="fzm-node-info fzm-floating" style={{ left: 24, top: 24 }}>Loading project...</div></main>;
   const guardedOpenProject = async (nextProjectId: string | null) => {
     const result = flushCurrentRef.current ? await flushCurrentRef.current() : "saved";
-    if (result === "conflict" || result === "locked") return;
+    if (result !== "saved") return;
     openProject(nextProjectId);
   };
 

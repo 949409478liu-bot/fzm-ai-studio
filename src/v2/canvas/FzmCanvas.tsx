@@ -20,6 +20,7 @@ import { CanvasBottomToolbar } from "./CanvasBottomToolbar";
 import { CanvasTopBar } from "./CanvasTopBar";
 import { EmptyState } from "./EmptyState";
 import { AssetDrawer } from "@/v2/assets/AssetDrawer";
+import { ProviderSettings } from "@/v2/providers/ProviderSettings";
 import { uploadProjectAssets } from "@/v2/assets/assetApi";
 import type { V2Asset } from "@/v2/assets/types";
 import { FzmEdge } from "./edges/FzmEdge";
@@ -88,6 +89,7 @@ export function FzmCanvas({ project, revision, saveState, onBack, onReloadLatest
   const [handleMenu, setHandleMenu] = useState<(FloatingPosition & { sourceNodeId: string }) | null>(null);
   const [info, setInfo] = useState<(FloatingPosition & { text: string }) | null>(null);
   const [assetsOpen, setAssetsOpen] = useState(false);
+  const [providersOpen, setProvidersOpen] = useState(false);
   const connectingFrom = useRef<string | null>(null);
 
   const closeFloating = useCallback(() => {
@@ -305,6 +307,7 @@ export function FzmCanvas({ project, revision, saveState, onBack, onReloadLatest
         onBack={onBack}
         onReloadLatest={onReloadLatest}
         onAssets={() => setAssetsOpen((open) => !open)}
+        onProviders={() => setProvidersOpen((open) => !open)}
         onMessage={(text) => setInfo({ x: window.innerWidth - 310, y: 76, text })}
       />
       {nodes.length === 0 ? (
@@ -352,6 +355,7 @@ export function FzmCanvas({ project, revision, saveState, onBack, onReloadLatest
       ) : null}
       {info ? <div className="fzm-node-info fzm-floating" style={{ left: info.x, top: info.y, whiteSpace: "pre-line" }}>{info.text}</div> : null}
       <AssetDrawer projectId={project.id} open={assetsOpen} onClose={() => setAssetsOpen(false)} onAddToCanvas={createAssetNode} />
+      <ProviderSettings open={providersOpen} onClose={() => setProvidersOpen(false)} />
       {process.env.NODE_ENV !== "production" ? (
         <button className="fzm-button" style={{ position: "absolute", right: 18, bottom: 18, zIndex: 30 }} type="button" onClick={seedHundredNodes}>Seed 100</button>
       ) : null}

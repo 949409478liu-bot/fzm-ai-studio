@@ -20,6 +20,18 @@ async function createTextNode(page: Page, body: string) {
   await page.locator("textarea").last().fill(body);
 }
 
+async function projectIdFromUrl(page: Page) {
+  return new URL(page.url()).searchParams.get("project")!;
+}
+
+async function fetchCanvas(page: Page, projectId: string) {
+  return page.evaluate(async (id) => {
+    const response = await fetch(`/api/v2/projects/${id}/canvas`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`canvas_fetch_failed_${response.status}`);
+    return response.json() as Promise<{ revision: number; nodes: Array<{ data: Record<string, unknown> }> }>;
+  }, projectId);
+}
+
 test("V2 durable project canvas and asset interactions", async ({ page }) => {
   await createProject(page);
   await page.waitForTimeout(500);
@@ -84,6 +96,47 @@ test("V2 project navigation and rename persist", async ({ page }) => {
   await expect(page.getByLabel("FZM AI Studio projects")).toBeVisible();
   await page.goForward();
   await expect(page.getByLabel("FZM AI Studio 2.0 canvas")).toBeVisible();
+});
+
+test("V2 browser conflict lock rejects stale overwrite and reload latest recovers", async ({ page, context }) => {
+  await createProject(page);
+  const projectUrl = page.url();
+  const projectId = await projectIdFromUrl(page);
+  const stalePage = await context.newPage();
+  await stalePage.goto(projectUrl);
+  await expect(stalePage.getByLabel("FZM AI Studio 2.0 canvas")).toBeVisible();
+
+  await createTextNode(page, "authoritative A");
+  await expect.poll(async () => (await fetchCanvas(page, projectId)).revision).toBe(1);
+
+  await createTextNode(stalePage, "stale B");
+  await expect(stalePage.getByText(/Conflict · rev 0/)).toBeVisible();
+
+  await stalePage.locator("textarea").last().fill("stale B edited again");
+  await stalePage.waitForTimeout(900);
+  const afterStaleEdit = await fetchCanvas(page, projectId);
+  expect(afterStaleEdit.revision).toBe(1);
+  expect(JSON.stringify(afterStaleEdit.nodes)).toContain("authoritative A");
+  expect(JSON.stringify(afterStaleEdit.nodes)).not.toContain("stale B edited again");
+
+  await stalePage.getByRole("button", { name: "Reload latest" }).click();
+  await expect(stalePage.getByText("authoritative A")).toBeVisible();
+  await expect(stalePage.getByText(/Saved · rev 1/)).toBeVisible();
+
+  await stalePage.locator("textarea").last().fill("B after reload");
+  await expect.poll(async () => (await fetchCanvas(stalePage, projectId)).revision).toBe(2);
+  await expect.poll(async () => JSON.stringify((await fetchCanvas(stalePage, projectId)).nodes)).toContain("B after reload");
+  await stalePage.close();
+});
+
+test("V2 browser popstate flushes fast edits before Back navigation", async ({ page }) => {
+  await createProject(page);
+  const projectUrl = page.url();
+  await createTextNode(page, "browser back durable");
+  await page.goBack();
+  await expect(page.getByLabel("FZM AI Studio projects")).toBeVisible();
+  await page.goto(projectUrl);
+  await expect(page.getByText("browser back durable")).toBeVisible();
 });
 
 test("V2 canvas move undo edge 100 reload and file drop", async ({ page }) => {

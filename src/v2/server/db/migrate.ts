@@ -1,6 +1,8 @@
 import "server-only";
 import type Database from "better-sqlite3";
+import fs from "node:fs";
 import { migration001Initial } from "./migrations/001_initial";
+import { migration002ProviderJobs } from "./migrations/002_provider_jobs";
 
 interface Migration {
   version: number;
@@ -8,9 +10,20 @@ interface Migration {
   up: (db: Database.Database) => void;
 }
 
-const migrations: Migration[] = [{ version: 1, name: "initial", up: migration001Initial }];
+const migrations: Migration[] = [
+  { version: 1, name: "initial", up: migration001Initial },
+  { version: 2, name: "provider_jobs", up: migration002ProviderJobs },
+];
 
-export function migrateDatabase(db: Database.Database) {
+function backupBeforeSchema2(dbPath?: string) {
+  if (!dbPath || !fs.existsSync(dbPath)) return null;
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const backupPath = `${dbPath}.bak.pre-v2-schema-2.${stamp}`;
+  fs.copyFileSync(dbPath, backupPath);
+  return backupPath;
+}
+
+export function migrateDatabase(db: Database.Database, dbPath?: string) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       version INTEGER PRIMARY KEY,
@@ -25,6 +38,7 @@ export function migrateDatabase(db: Database.Database) {
 
   for (const migration of migrations) {
     if (applied.has(migration.version)) continue;
+    if (migration.version === 2) backupBeforeSchema2(dbPath);
     const run = db.transaction(() => {
       migration.up(db);
       db.prepare("INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)").run(

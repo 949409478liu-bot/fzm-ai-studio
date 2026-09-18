@@ -10,7 +10,7 @@ type DbInstance = Database.Database;
 
 const globalForDb = globalThis as typeof globalThis & { __fzmV2Db?: DbInstance; __fzmV2DbPath?: string };
 
-export const V2_SCHEMA_VERSION = 1;
+export const V2_SCHEMA_VERSION = 2;
 
 export function getDbPath(): string {
   return path.join(getV2DataRoot(), "fzm.db");
@@ -42,7 +42,7 @@ export function getDb(): DbInstance {
   db.pragma("journal_mode = WAL");
   db.pragma("busy_timeout = 5000");
   db.pragma("synchronous = NORMAL");
-  migrateDatabase(db);
+  migrateDatabase(db, dbPath);
   globalForDb.__fzmV2Db = db;
   globalForDb.__fzmV2DbPath = dbPath;
   return db;
