@@ -6,27 +6,31 @@ Scope: Phase 4.1 readiness audit only. No real paid provider request was execute
 
 ## Audit Result
 
-- Enabled real V2 providers found: 0
+- Enabled real V2 providers found: 2
+- Enabled real providers: Moyu (`moyu`), GPTsAPI (`replicate`)
 - Fake/dev providers excluded: yes
 - Masked keys only: yes
 - Raw API keys printed: no
 - Paid smoke executed: no
-- Paid smoke ready: no
+- Paid smoke ready: yes, pending explicit human approval
 
 ## Current Enabled Real Providers
 
-No enabled real V2 provider configuration was found in the default V2 data root (`data/v2`).
+| Provider ID | Name | Kind | Base URL | Key | Models |
+| --- | --- | --- | --- | --- | --- |
+| `moyu` | Moyu / magic-yu relay | `moyu` | `https://www.moyu.info/v1` | masked only | `gpt-image-2`, `gemini-3-pro-image-preview` |
+| `replicate` | GPTsAPI | `gptsapi` | `https://api.gptsapi.net/v1` | masked only | `gpt-image-2`, `gemini-3.1-flash-image-preview`, `gemini-3-pro-image-preview` |
 
-## Smoke Tests To Run After Manual Configuration
+## Smoke Tests To Run After Manual Approval
 
-Run these only after a human explicitly approves paid smoke testing and confirms enabled V2 provider configs exist.
+Run these only after a human explicitly approves paid smoke testing. Do not run them automatically.
 
 | Test | Provider | Model exact ID | Action | Expected API path class | Expected output | Expected job behavior | Max duration |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | GPTsAPI, if configured | From V2 provider config | `image.generate` | OpenAI-compatible image generation | 1 image, 1:1, lowest supported quality | queued -> submitting/polling -> downloading/finalizing -> succeeded | 180s |
-| 2 | Moyu OpenAI Image, if configured | From V2 provider config | `image.generate` | OpenAI-compatible image generation | 1 image, 1:1, lowest supported quality | queued -> submitting/polling -> downloading/finalizing -> succeeded | 180s |
-| 3 | Moyu OpenAI Image, if configured | From V2 provider config | `image.edit` | OpenAI-compatible image edit with reference | 1 edited image from a small reference | queued -> submitting/polling -> downloading/finalizing -> succeeded | 180s |
-| 4 | Gemini image, if configured | From V2 provider config | `image.generate` | Gemini image generation | 1 image, minimum supported quality | queued -> submitting/polling -> downloading/finalizing -> succeeded | 180s |
+| 1 | GPTsAPI (`replicate`) | `gpt-image-2` | `image.generate` | GPTsAPI image generation via OpenAI provider path | 1 image, 1:1, lowest supported quality | queued -> submitting/polling -> downloading/finalizing -> succeeded | 180s |
+| 2 | Moyu (`moyu`) | `gpt-image-2` | `image.generate` | Moyu OpenAI Images protocol | 1 image, 1:1, lowest supported quality | queued -> submitting/polling -> downloading/finalizing -> succeeded | 180s |
+| 3 | Moyu (`moyu`) | `gpt-image-2` | `image.edit` | Moyu OpenAI Images edit/multipart protocol | 1 edited image from one small local reference | queued -> submitting/polling -> downloading/finalizing -> succeeded | 180s |
+| 4 | Moyu (`moyu`) | `gemini-3-pro-image-preview` | `image.generate` | Moyu Gemini-native protocol | 1 image, 1:1, lowest supported quality | queued -> submitting/polling -> downloading/finalizing -> succeeded | 180s |
 
 ## Preconditions
 
@@ -35,9 +39,36 @@ Run these only after a human explicitly approves paid smoke testing and confirms
 - Use 1 output, 1:1 aspect ratio, and the minimum quality the provider supports.
 - Do not enable automatic provider failover.
 - Stop after the first paid smoke failure and inspect Job / Generation history.
+- Total planned paid generation requests: 4 maximum.
+- Do not use Best-of-N, batch count > 1, or automatic cross-provider retry.
 
 ## Safety Notes
 
 - Re-submit after ambiguous transport failure must reuse the same client `requestId`.
 - Re-run restores settings into PromptBar only; it must not auto-submit.
 - Failed provider A must not auto-submit to provider B.
+
+## Smoke Result Template
+
+Fill one block per manually approved smoke test.
+
+```text
+Provider =
+Model =
+Action =
+Started At =
+Generation ID =
+Job ID =
+Remote Task ID Present = YES/NO
+Submit Count =
+Poll Count =
+Duration =
+Final Status =
+Asset ID =
+Node Attached = YES/NO
+Reload Persisted = YES/NO
+Cost = UNKNOWN
+Error =
+```
+
+Never record API keys, Authorization headers, `secret_json`, provider path internals, or raw vendor tickets in this file.
