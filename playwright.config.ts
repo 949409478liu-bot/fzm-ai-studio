@@ -1,0 +1,18 @@
+import { defineConfig, devices } from "@playwright/test";
+
+export default defineConfig({
+  testDir: "./tests/e2e",
+  testMatch: /.*\.e2e\.ts/,
+  timeout: 60_000,
+  use: {
+    baseURL: "http://localhost:3200",
+    trace: "retain-on-failure",
+  },
+  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  webServer: {
+    command: "npm run dev -- --port 3200",
+    url: "http://localhost:3200/v2",
+    reuseExistingServer: true,
+    timeout: 120_000,
+  },
+});

@@ -1,0 +1,20 @@
+:root {
+  --fzm-bg-canvas: #0b0b0c;
+  --fzm-bg-panel: rgba(24, 24, 27, 0.94);
+  --fzm-bg-elevated: #202023;
+  --fzm-bg-node: rgba(22, 22, 25, 0.92);
+  --fzm-border: rgba(255, 255, 255, 0.08);
+  --fzm-border-hover: rgba(255, 255, 255, 0.16);
+  --fzm-text-primary: #f4f4f5;
+  --fzm-text-secondary: #a1a1aa;
+  --fzm-text-muted: #71717a;
+  --fzm-accent: #8b5cf6;
+  --fzm-accent-soft: rgba(139, 92, 246, 0.16);
+  --fzm-accent-border: rgba(139, 92, 246, 0.48);
+  --fzm-danger: #fb7185;
+  --fzm-success: #34d399;
+  --fzm-warning: #fbbf24;
+  --fzm-shadow-panel: 0 18px 60px rgba(0, 0, 0, 0.42), 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+  --fzm-radius-panel: 14px;
+  --fzm-radius-node: 12px;
+}

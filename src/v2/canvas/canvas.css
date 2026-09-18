@@ -1,0 +1,201 @@
+.fzm-v2-shell {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--fzm-bg-canvas);
+  color: var(--fzm-text-primary);
+}
+
+.fzm-v2-flow {
+  width: 100%;
+  height: 100%;
+}
+
+.fzm-v2-flow .react-flow__pane { cursor: default; }
+.fzm-v2-flow[data-tool="hand"] .react-flow__pane,
+.fzm-v2-flow[data-space-hand="true"] .react-flow__pane { cursor: grab; }
+.fzm-v2-flow[data-tool="connect"] .react-flow__pane { cursor: crosshair; }
+.fzm-v2-flow .react-flow__selection { background: rgba(139, 92, 246, 0.08); border: 1px solid var(--fzm-accent-border); }
+.fzm-v2-flow .react-flow__edge-path { stroke: rgba(161, 161, 170, 0.62); stroke-width: 1.6; }
+.fzm-v2-flow .react-flow__edge.selected .react-flow__edge-path { stroke: var(--fzm-accent); stroke-width: 2; }
+.fzm-v2-flow .react-flow__connection-path { stroke: var(--fzm-accent); stroke-width: 1.8; }
+
+.fzm-floating {
+  background: var(--fzm-bg-panel);
+  border: 1px solid var(--fzm-border);
+  border-radius: var(--fzm-radius-panel);
+  box-shadow: var(--fzm-shadow-panel);
+  backdrop-filter: blur(16px);
+}
+
+.fzm-topbar {
+  position: absolute;
+  z-index: 20;
+  top: 14px;
+  left: 50%;
+  width: min(980px, calc(100vw - 32px));
+  height: 48px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px 0 12px;
+}
+
+.fzm-topbar__left,
+.fzm-topbar__right,
+.fzm-toolbar { display: flex; align-items: center; gap: 6px; }
+.fzm-project { display: flex; flex-direction: column; gap: 1px; margin-left: 6px; }
+.fzm-project strong { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
+.fzm-project span { font-size: 11px; color: var(--fzm-text-muted); }
+
+.fzm-button {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 0 9px;
+  background: transparent;
+  color: var(--fzm-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+.fzm-button:hover:not(:disabled),
+.fzm-button[data-active="true"] { background: rgba(255,255,255,0.06); color: var(--fzm-text-primary); border-color: var(--fzm-border); }
+.fzm-button[data-active="true"] { border-color: var(--fzm-accent-border); background: var(--fzm-accent-soft); }
+.fzm-button:disabled { color: var(--fzm-text-muted); cursor: not-allowed; opacity: 0.48; }
+.fzm-icon-button { width: 30px; padding: 0; }
+
+.fzm-bottom-toolbar {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  z-index: 20;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 7px;
+}
+.fzm-separator { width: 1px; height: 22px; margin: 0 4px; background: var(--fzm-border); }
+.fzm-zoom-label { min-width: 46px; color: var(--fzm-text-secondary); font-size: 12px; text-align: center; }
+
+.fzm-empty-state {
+  position: absolute;
+  z-index: 10;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: var(--fzm-text-muted);
+  pointer-events: none;
+}
+.fzm-empty-state strong { color: var(--fzm-text-secondary); font-size: 14px; font-weight: 500; }
+.fzm-empty-actions { display: flex; gap: 8px; pointer-events: auto; }
+
+.fzm-menu {
+  position: fixed;
+  z-index: 40;
+  min-width: 192px;
+  padding: 7px;
+}
+.fzm-menu__label { padding: 6px 8px 7px; color: var(--fzm-text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+.fzm-menu__item {
+  width: 100%;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--fzm-text-secondary);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  padding: 0 9px;
+}
+.fzm-menu__item:hover:not(:disabled) { background: rgba(255,255,255,0.07); color: var(--fzm-text-primary); }
+.fzm-menu__item:disabled { opacity: .45; cursor: not-allowed; }
+.fzm-menu__sep { height: 1px; background: var(--fzm-border); margin: 6px 4px; }
+
+.fzm-node {
+  min-width: 100%;
+  min-height: 100%;
+  overflow: hidden;
+  border-radius: var(--fzm-radius-node);
+  border: 1px solid var(--fzm-border);
+  background: var(--fzm-bg-node);
+  box-shadow: 0 14px 38px rgba(0,0,0,.28);
+  color: var(--fzm-text-primary);
+}
+.fzm-node:hover { border-color: var(--fzm-border-hover); }
+.react-flow__node.selected .fzm-node { border-color: var(--fzm-accent-border); box-shadow: 0 0 0 1px rgba(139,92,246,.18), 0 16px 42px rgba(0,0,0,.34); }
+.fzm-node__header {
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 9px;
+  color: var(--fzm-text-secondary);
+  font-size: 12px;
+  border-bottom: 1px solid rgba(255,255,255,.045);
+  cursor: grab;
+}
+.fzm-node__toolbar { display: flex; gap: 4px; opacity: 0; transition: opacity 120ms ease; }
+.fzm-node:hover .fzm-node__toolbar,
+.react-flow__node.selected .fzm-node__toolbar { opacity: 1; }
+.fzm-node__body { padding: 12px; }
+.fzm-textarea {
+  width: 100%;
+  min-height: 130px;
+  resize: none;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--fzm-text-primary);
+  font: inherit;
+  line-height: 1.45;
+}
+.fzm-media-placeholder {
+  height: 190px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed rgba(255,255,255,.1);
+  background: linear-gradient(145deg, rgba(255,255,255,.05), rgba(255,255,255,.015));
+  color: var(--fzm-text-muted);
+  font-size: 12px;
+}
+.fzm-group-node { min-width: 100%; min-height: 100%; background: rgba(139,92,246,.035); border-style: dashed; }
+.fzm-group-node .fzm-node__body { height: calc(100% - 30px); display: grid; place-items: start; color: var(--fzm-text-muted); font-size: 12px; }
+
+.fzm-handle {
+  width: 10px !important;
+  height: 10px !important;
+  border: 1px solid rgba(255,255,255,.35) !important;
+  background: rgba(24,24,27,.94) !important;
+  opacity: 0;
+  transition: opacity 120ms ease, background 120ms ease;
+}
+.fzm-handle--output { background: var(--fzm-accent) !important; border-color: rgba(255,255,255,.45) !important; }
+.fzm-node:hover .fzm-handle,
+.react-flow__node.selected .fzm-handle { opacity: 1; }
+
+.fzm-node-info {
+  position: fixed;
+  z-index: 45;
+  width: 240px;
+  padding: 12px;
+  color: var(--fzm-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
